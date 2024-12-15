@@ -22,6 +22,7 @@ You will need my fork of the TFT_eSPI
 https://github.com/bdureau/TFT_eSPI
 
 Compile with the following options:
+
 <img src="/photos/TS-ESP32-S3-compile.png" width="35%">
 
 Prior to compiling go to the TFT_eSPI and open up the file User_Setup_Select.h
