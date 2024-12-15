@@ -15,7 +15,7 @@ The project depend on the following libraries
   - Button2
   - TFT_eWidget
   - Preferences
-  - BME280I2C
+  - BME280
   - SensorLib (used for the QMI8658 sensor)
     
 You will need my fork of the TFT_eSPI
