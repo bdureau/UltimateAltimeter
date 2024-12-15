@@ -2,6 +2,7 @@
 This altimeter uses the TS-ESP32-S3 board without any additional components
 
 The board is based on the Adafruit ESP32 S3 TFT Feather
+
 https://cdn-learn.adafruit.com/downloads/pdf/adafruit-esp32-s3-tft-feather.pdf
 
 
