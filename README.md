@@ -37,3 +37,18 @@ and uncomment the following line
 
 #include <User_Setups/Setup400_Adafruit_Feather.h>
 
+# Contributing
+
+If you want to contribute to the project just fork my project or send me some code. 
+
+Report any issue or bug that you have
+
+Suggestions and enhancement are welcome
+
+The code is free for you to download and you do not need to buy anything from me. However it cost money to try out new boards, you need to buy them and fly them so if you want to financially help me you can donate via paypal
+
+| Paypal | 
+| ------ |
+| [![](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/paypalme/bearaltimeter) | 
+
+
