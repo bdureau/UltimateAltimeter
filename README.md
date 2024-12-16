@@ -1,5 +1,7 @@
 # UltimateAltimeter
 This altimeter uses the TS-ESP32-S3 board without any additional components
+You can find it on Aliexpress
+https://vi.aliexpress.com/w/wholesale-TS%2525252dESP32%2525252dS3.html
 
 The board is based on the Adafruit ESP32 S3 TFT Feather
 
