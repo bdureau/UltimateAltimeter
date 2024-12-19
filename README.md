@@ -14,7 +14,7 @@ https://github.com/adafruit/Adafruit-ESP32-S3-TFT-Feather-PCB/blob/main/Adafruit
 
 The board looks like this
 
-<img src="/photos/UltimateAltimeter1.jpg" width="15%"><img src="/photos/UltimateAltimeter2.jpg" width="35%">
+<img src="/photos/UltimateAltimeter1.jpg" width="15%"><img src="/photos/UltimateAltimeter2.jpg" width="35%"><img src="/photos/ultimateAlti_flight.jpg" width="35%">
 
 # Building the code
 
