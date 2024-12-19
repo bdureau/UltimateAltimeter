@@ -12,11 +12,15 @@ logger::logger() {
 
 */
 bool logger::clearFlightList() {
-  bool ret;
-  prefs.begin("flights");
-  ret = prefs.clear();
+  bool success;
+  prefs.begin(WORKSPACE);
+  success = prefs.clear();
   prefs.end();
-  return ret;
+  #ifdef DEBUG
+  if(success)
+    Serial.println(F("success"));
+  #endif
+  return success;
 }
 
 /*
@@ -24,26 +28,36 @@ bool logger::clearFlightList() {
 */
 long logger::readFlightList() {
   long numberOfFlights = 0;
-  prefs.begin("flights");
+  prefs.begin(WORKSPACE);
 
   prefs.end();
   return numberOfFlights;
 }
 
 long logger::getLastFlightNbr() {
+  #ifdef DEBUG
+  Serial.println(F("Begin getLastFlightNbr"));
+  #endif
   long numberOfFlights = 0;
-  prefs.begin("flights");
+  prefs.begin(WORKSPACE);
   char flightName [15];
-  numberOfFlights++;
-  sprintf(flightName, "flight%i,", numberOfFlights );
-  Serial.println(flightName);
-  while (prefs.isKey(flightName)) {
+  bool exit =false;
+  
+  while(!exit) {
     numberOfFlights++;
-    sprintf(flightName, "flight%i,", numberOfFlights );
-    Serial.println(flightName);
+    sprintf(flightName, "flight%i", numberOfFlights );
+    if(!prefs.isKey(flightName)){
+      exit = true;
+      numberOfFlights--;
+    }
   }
+  
   prefs.end();
-  return numberOfFlights - 1;
+  #ifdef DEBUG
+  Serial.println(F("End getLastFlightNbr"));
+  #endif
+
+  return numberOfFlights;
 }
 
 FlightDataStruct* logger::getFlightData() {
@@ -52,12 +66,12 @@ FlightDataStruct* logger::getFlightData() {
 
 bool logger::writeFlight(long flightNbr) {
   bool success = false;
-  prefs.begin("flights");
+  prefs.begin(WORKSPACE);
   char flightName [15];
-  sprintf(flightName, "flight%i,", flightNbr );
+  sprintf(flightName, "flight%i", flightNbr );
   // Write current flight data
   if (flightData != nullptr) {
-    prefs.putBytes(flightName, flightData, /*sizeof(flightData)*/ sizeof(FlightDataStruct) * dataPos);
+    prefs.putBytes(flightName, flightData, sizeof(FlightDataStruct) * dataPos);
     success = true;
   }
   prefs.end();
@@ -66,23 +80,24 @@ bool logger::writeFlight(long flightNbr) {
 
 bool logger::readFlight(long flightNbr) {
   bool success = false;
-  prefs.begin("flights");
+  prefs.begin(WORKSPACE);
   char flightName [15];
-  sprintf(flightName, "flight%i,", flightNbr );
-
+  sprintf(flightName, "flight%i", flightNbr );
+  Serial.println(F("Reading flight:"));
+  Serial.println(flightName);
   //retrieve flight
   // Retrieve the flight data from preferences
   size_t schLen = prefs.getBytesLength(flightName);  // Get the total length of the stored data for the flight
   if (schLen == 0) {
-    Serial.println("No data found.");
+    Serial.println(F("No data found."));
     prefs.end();
     return false;
   }
   // Calculate how many flight_t structures we have stored (this is safe because the size of flight_t is known)
   size_t numFlights = schLen / sizeof(FlightDataStruct);
 
-  Serial.print("Number of flights found: ");
-  Serial.print(numFlights);
+  Serial.print(F("Number of flights found: "));
+  Serial.println(numFlights);
   //check if the current flight is empty or not
   //if not empty free it first to avoid memory leak
   if (flightData != nullptr) {
@@ -92,7 +107,9 @@ bool logger::readFlight(long flightNbr) {
   flightData = (FlightDataStruct*)malloc(schLen);
 
   if (flightData == nullptr) {
-    Serial.println("Memory allocation failed.");
+    #ifdef DEBUG
+    Serial.println(F("Memory allocation failed."));
+    #endif
     prefs.end();
     return false;
   }
@@ -108,16 +125,24 @@ bool logger::readFlight(long flightNbr) {
 bool logger::writeFastFlight() {
   bool success = false;
   long lastFlightNbr = getLastFlightNbr();
+  Serial.print(F("lastFlightNbr"));
+  Serial.println(lastFlightNbr);
   lastFlightNbr++;
 
   char flightName [15];
-  sprintf(flightName, "flight%i,", lastFlightNbr );
+  sprintf(flightName, "flight%i", lastFlightNbr );
 
-  prefs.begin("flights");
+  prefs.begin(WORKSPACE);
+  size_t whatsLeft = prefs.freeEntries();    // this method works regardless of the mode in which the namespace is opened.
+  Serial.printf("There are: %u entries available in the namespace table.\n", whatsLeft);
   // Check if flightData is valid before writing
   if (flightData != nullptr && dataPos > 0) {
-    prefs.putBytes(flightName, flightData, /*sizeof(flightData)*/ sizeof(FlightDataStruct) * dataPos);
-    success = true;
+    Serial.println(F("Writting flight:"));
+    Serial.println(flightName);
+    success = prefs.putBytes(flightName, flightData, sizeof(FlightDataStruct) * dataPos);
+    //success = true;
+    if(success)
+      Serial.println(F("flight write success"));
   }
   prefs.end();
   return success;
@@ -125,12 +150,7 @@ bool logger::writeFastFlight() {
 
 bool logger::addToCurrentFlight() {
   bool success = false;
-  /*dataPos++;
-    // first allocate some memory
-    if (realloc(flightData, dataPos * sizeof(FlightDataStruct))) {
-    flightData[dataPos - 1] = currentRecord;
-    success = true;
-    }*/
+  
   // Allocate memory if necessary
   FlightDataStruct* newFlightData = (FlightDataStruct*)realloc(flightData, (dataPos + 1) * sizeof(FlightDataStruct));
 
@@ -140,7 +160,7 @@ bool logger::addToCurrentFlight() {
     dataPos++;
     success = true;
   } else {
-    Serial.println("Reallocation failed.");
+    Serial.println(F("Reallocation failed."));
   }
   return success;
 }
@@ -157,10 +177,12 @@ bool logger::eraseLastFlight() {
   long success = false;
   long lastFlightNbr = getLastFlightNbr();
   if (lastFlightNbr > 0) {
-    prefs.begin("flights");
+    prefs.begin(WORKSPACE);
     char flightName [15];
-    sprintf(flightName, "flight%i,", lastFlightNbr );
+    sprintf(flightName, "flight%i", lastFlightNbr );
     success = prefs.remove(flightName);
+    /*if(success)
+    Serial.println("Erase success");*/
     prefs.end();
   }
   return success;
@@ -174,7 +196,7 @@ void logger::setFlightAltitudeData( long altitude) {
   currentRecord.altitude = altitude;
 }
 
-void logger::setFlightPressureData( long pressure) {
+/*void logger::setFlightPressureData( long pressure) {
   currentRecord.pressure = pressure;
 }
 
@@ -184,7 +206,7 @@ void logger::setFlightTemperatureData(long temperature) {
 
 void logger::setFlightHumidityData( long humidity) {
   currentRecord.humidity = humidity;
-}
+}*/
 
 void logger::setAccelX(long accelX) {
   currentRecord.accelX = accelX;
@@ -203,10 +225,10 @@ void logger::getFlightMinAndMax(long flightNbr)
 
   _FlightMinAndMax.minAltitude = 0;
   _FlightMinAndMax.maxAltitude = 0;
-  _FlightMinAndMax.minTemperature = 0;
+  /*_FlightMinAndMax.minTemperature = 0;
   _FlightMinAndMax.maxTemperature = 0;
   _FlightMinAndMax.minPressure = 0;
-  _FlightMinAndMax.maxPressure = 0;
+  _FlightMinAndMax.maxPressure = 0;*/
   _FlightMinAndMax.minAccelX = 0;
   _FlightMinAndMax.maxAccelX = 0;
   _FlightMinAndMax.minAccelY = 0;
@@ -225,7 +247,7 @@ void logger::getFlightMinAndMax(long flightNbr)
       if (flightData[i].altitude > _FlightMinAndMax.maxAltitude)
         _FlightMinAndMax.maxAltitude = flightData[i].altitude;
 
-      if (flightData[i].temperature < _FlightMinAndMax.minTemperature)
+      /*if (flightData[i].temperature < _FlightMinAndMax.minTemperature)
         _FlightMinAndMax.minTemperature = flightData[i].temperature;
       if (flightData[i].temperature > _FlightMinAndMax.maxTemperature)
         _FlightMinAndMax.maxTemperature = flightData[i].temperature;
@@ -233,7 +255,7 @@ void logger::getFlightMinAndMax(long flightNbr)
       if (flightData[i].pressure < _FlightMinAndMax.minPressure)
         _FlightMinAndMax.minPressure = flightData[i].pressure;
       if (flightData[i].pressure > _FlightMinAndMax.maxTemperature)
-        _FlightMinAndMax.maxPressure = flightData[i].pressure;
+        _FlightMinAndMax.maxPressure = flightData[i].pressure;*/
 
       //long accelX = getADXL345accelX();
       if (flightData[i].accelX < _FlightMinAndMax.minAccelX)
@@ -271,7 +293,7 @@ long logger::getMaxAltitude()
   return _FlightMinAndMax.maxAltitude;
 }
 
-long logger::getMaxTemperature()
+/*long logger::getMaxTemperature()
 {
   return _FlightMinAndMax.maxTemperature;
 }
@@ -279,7 +301,7 @@ long logger::getMaxTemperature()
 long logger::getMaxPressure()
 {
   return _FlightMinAndMax.maxPressure;
-}
+}*/
 
 long logger::getMaxAccelX()
 {

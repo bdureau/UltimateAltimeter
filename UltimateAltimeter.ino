@@ -33,6 +33,8 @@
 #include "images/battery_04.h"
 #include "images/battery_05.h"
 
+//#define DEBUG
+
 
 #ifndef SENSOR_SDA
 #define SENSOR_SDA  42
@@ -67,8 +69,8 @@ TFT_eSPI tft = TFT_eSPI();
 GraphWidget gr = GraphWidget(&tft);    // Graph widget
 // Flight curves are drawn on tft using graph instance
 TraceWidget trAltitude = TraceWidget(&gr);    // Altitude
-TraceWidget trTemperature = TraceWidget(&gr);
-TraceWidget trPressure = TraceWidget(&gr);
+/*TraceWidget trTemperature = TraceWidget(&gr);
+  TraceWidget trPressure = TraceWidget(&gr);*/
 TraceWidget trAccelX = TraceWidget(&gr);    // Accel X
 TraceWidget trAccelY = TraceWidget(&gr);    // Accel Y
 TraceWidget trAccelZ = TraceWidget(&gr);    // Accel Z
@@ -190,8 +192,8 @@ void button_init()
         drawFlightNbr(diplayedFlightNbr, currentCurveType);
       } else {
         // if not lets go back to the first one if it exists
-        if (!(lastFlightNbr < 0)) {
-          diplayedFlightNbr = 0;
+        if (!(lastFlightNbr < 1)) {
+          diplayedFlightNbr = 1;
           drawFlightNbr(diplayedFlightNbr, currentCurveType);
         }
       }
@@ -215,9 +217,9 @@ void button_init()
         long lastFlightNbr = flightLogger.getLastFlightNbr();
         Serial.print("lastFlightNbr:");
         Serial.println(lastFlightNbr);
-        if (!(lastFlightNbr < 0)) {
+        if (!(lastFlightNbr < 1)) {
           inGraph = true;
-          diplayedFlightNbr = 0;
+          diplayedFlightNbr = 1;
           drawFlightNbr(diplayedFlightNbr, currentCurveType);
         }
       } else {
@@ -435,27 +437,33 @@ void loop() {
   //Serial.println("in loop2");
   button_loop();
   currAltitude = (long)ReadAltitude() - initialAltitude;
-  if (!inGraph) {
-    //SendTelemetry(0, 500);
-    tft.setCursor (0, STATUS_HEIGHT_BAR);
-    char Altitude [40];
+  if (!( currAltitude > liftoffAltitude) )
+  {
+    if (!inGraph) {
+      //SendTelemetry(0, 500);
+      tft.setCursor (0, STATUS_HEIGHT_BAR);
+      char Altitude [40];
 
-    sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
-    tft.setCursor (0, STATUS_HEIGHT_BAR);
-    tft.println("                                     ");
-    tft.println(Altitude);
-    char temp [15];
-    if (qmi.getDataReady()) {
-      if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
-        sprintf(temp, "x=%3.2f m/s", (float)acc.x );
-        tft.println("");
-        tft.println(temp);
-        sprintf(temp, "y=%3.2f m/s", (float) acc.y );
-        tft.println(temp);
-        sprintf(temp, "z=%3.2f m/s", (float) acc.z );
-        tft.println(temp);
+      sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
+      tft.setCursor (0, STATUS_HEIGHT_BAR);
+      tft.println("                                     ");
+      tft.println(Altitude);
+      char temp [15];
+      if (qmi.getDataReady()) {
+        if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
+          sprintf(temp, "x=%3.2f m/s", (float)acc.x );
+          tft.println("");
+          tft.println(temp);
+          sprintf(temp, "y=%3.2f m/s", (float) acc.y );
+          tft.println(temp);
+          sprintf(temp, "z=%3.2f m/s", (float) acc.z );
+          tft.println(temp);
+        }
       }
     }
+  } else {
+    Serial.println("Recording!!!!");
+    recordAltitude();
   }
 }
 void loop2() {
@@ -655,14 +663,8 @@ void drawFlightNbr(int flightNbr, int curveType) {
       trAltitude.startTrace(TFT_GREEN);
       drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxAltitude(), flightNbr, "Altitude (meters)" );
     }
-
-    //pressure
+    //accel
     if (curveType == 1) {
-      trPressure.startTrace(TFT_GREY);
-      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxPressure(), flightNbr, "Pressure (mBar)" );
-    }
-
-    if (curveType == 2) {
       trAccelX.startTrace(TFT_RED);
       trAccelY.startTrace(TFT_PURPLE);
       trAccelY.startTrace(TFT_YELLOW);
@@ -676,11 +678,16 @@ void drawFlightNbr(int flightNbr, int curveType) {
 
       drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) maxAccel / 1000.0, flightNbr, "Accel X,Y,Z (m/s)" );
     }
+    //pressure
+    /*if (curveType == 2) {
+      trPressure.startTrace(TFT_GREY);
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxPressure(), flightNbr, "Pressure (mBar)" );
+      }*/
     //temperature
-    if (curveType == 3) {
+    /*if (curveType == 3) {
       trTemperature.startTrace(TFT_BROWN);
       drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxTemperature(), flightNbr, "Temp (°C)" );
-    }
+      }*/
 
     //FlightDataStruct* currentFlight;
     //currentFlight = flightLogger.getFlightData();
@@ -694,24 +701,24 @@ void drawFlightNbr(int flightNbr, int curveType) {
       if ( curveType == 0) {
         trAltitude.addPoint(currentTime, currentFlight[i].altitude);
       }
+
       if ( curveType == 1) {
-        trPressure.addPoint(currentTime, currentFlight[i].pressure);
-      }
-      if ( curveType == 2) {
         trAccelX.addPoint(currentTime, (float)currentFlight[i].accelX / 1000.0);
         trAccelY.addPoint(currentTime, (float)currentFlight[i].accelY / 1000.0);
         trAccelZ.addPoint(currentTime, (float)currentFlight[i].accelZ / 1000.0);
       }
-      if ( curveType == 3) {
+      /*if ( curveType == 2) {
+        trPressure.addPoint(currentTime, currentFlight[i].pressure);
+        }
+        if ( curveType == 3) {
         trTemperature.addPoint(currentTime, currentFlight[i].temperature);
-      }
+        }*/
     }
   }
 }
 
 /*
    recordAltitude()
-
 
 */
 void recordAltitude()
@@ -743,19 +750,21 @@ void recordAltitude()
     unsigned long prevTime = 0;
     long prevAltitude = 0;
     // loop until we have reach an altitude of 3 meter
+    //unsigned long lastRecordTime;
     while (liftOff)
     {
       unsigned long currentTime;
       unsigned long diffTime;
+
 
       currAltitude = (ReadAltitude() - initialAltitude);
 
       currentTime = millis() - initialTime;
 
       prevAltitude = currAltitude;
-      //SendTelemetry(currentTime, 200);
-      diffTime = currentTime - prevTime;
-      prevTime = currentTime;
+
+      /*diffTime = currentTime - prevTime;
+        prevTime = currentTime;*/
       //display
       char Altitude [15];
       currAltitude = (long)ReadAltitude() - initialAltitude;
@@ -796,34 +805,40 @@ void recordAltitude()
       //record
       if (canRecord)
       {
-        //logger.setFlightTimeData( diffTime);
-        flightLogger.setFlightTimeData(diffTime);
-        //logger.setFlightAltitudeData(currAltitude);
-        flightLogger.setFlightAltitudeData(currAltitude);
-        double temperature, pressure;
-        //bmp.getTemperatureAndPressure(temperature, pressure);
-        flightLogger.setFlightTemperatureData((long) temperature);
-        flightLogger.setFlightPressureData((long) pressure);
+        if ((currentTime - prevTime) > 500) {
+            diffTime = currentTime - prevTime;
+            prevTime = currentTime;
 
-        if (qmi.getDataReady()) {
+            flightLogger.setFlightTimeData(diffTime);
+            flightLogger.setFlightAltitudeData(currAltitude);
+            double temperature, pressure;
+            //bmp.getTemperatureAndPressure(temperature, pressure);
+            /*flightLogger.setFlightTemperatureData((long) temperature);
+              flightLogger.setFlightPressureData((long) pressure);*/
+
+          if (qmi.getDataReady()) {
           if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
             flightLogger.setAccelX(acc.x);
             flightLogger.setAccelY(acc.y);
             flightLogger.setAccelZ(acc.z);
           }
         }
+        //if((millis() - lastRecordTime) > 500) {
         flightLogger.addToCurrentFlight();
+        //lastRecordTime = millis();
+        //}
       }
+    }
 
 
-      if ((canRecord  && (currAltitude < 10) && (millis() - timeToApogee) > 2000) || (canRecord  && (millis() - initialTime) > recordingTimeOut) )
-      {
-        //end loging
-        //save flight
-        liftOff = false;
-        flightLogger.writeFastFlight();
-        exitRecording = true;
-      }
-    } // end while (liftoff)
-  } //end while(recording)
+    if ((canRecord  && (currAltitude < 10) && (millis() - timeToApogee) > 2000) || (canRecord  && (millis() - initialTime) > recordingTimeOut) )
+    {
+      //end loging
+      //save flight
+      liftOff = false;
+      flightLogger.writeFastFlight();
+      exitRecording = true;
+    }
+  } // end while (liftoff)
+} //end while(recording)
 }

@@ -2,13 +2,16 @@
 #define _LOGGER_H
 
 #include <Preferences.h>
+//#define DEBUG
+#undef DEBUG
+#define WORKSPACE "flights"
 
 struct FlightDataStruct {
   long diffTime;
   long altitude;
-  long temperature;
-  long humidity;
-  long pressure;
+  //long temperature;
+  //long humidity;
+  //long pressure;
   long accelX;
   long accelY;
   long accelZ;
@@ -17,10 +20,10 @@ struct FlightDataStruct {
 struct FlightMinAndMaxStruct {
   long minAltitude;
   long maxAltitude;
-  long minTemperature;
+  /*long minTemperature;
   long maxTemperature;
   long minPressure;
-  long maxPressure;
+  long maxPressure;*/
   long minAccelX;
   long maxAccelX;
   long minAccelY;
@@ -48,9 +51,9 @@ class logger
 
     void setFlightTimeData( long difftime);
     void setFlightAltitudeData( long altitude);
-    void setFlightPressureData( long pressure);
+    /*void setFlightPressureData( long pressure);
     void setFlightHumidityData( long humidity);
-    void setFlightTemperatureData(long temperature);
+    void setFlightTemperatureData(long temperature);*/
     void setAccelX(long accelX);
     void setAccelY(long accelY);
     void setAccelZ(long accelZ);
@@ -58,8 +61,8 @@ class logger
 
     long getMinAltitude();
     long getMaxAltitude();
-    long getMaxTemperature();
-    long getMaxPressure();
+    /*long getMaxTemperature();
+    long getMaxPressure();*/
     long getMinAccelX();
     long getMaxAccelX();
     long getMinAccelY();
