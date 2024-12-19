@@ -1,10 +1,38 @@
+/*
+    UltimateAltimeter ver0.1
+    Copyright Boris du Reau 2012-2024
+    This is using a BME280 presure sensor
+    for the accelerometer
+
+    !!!IMPORTANT!!!!
+    to compile it use the board "Adafruit Feather ESP32-S3 TFT"
+    !!!IMPORTANT!!!!
+    The flight is recorded on the board
+
+    Major changes on version 0.1
+    Initial version of the code, this is re-using code from the TTGO board
+    can display altitude, acceleration, temperature and pressure
+
+*/
+#include <SPI.h>
 #include <TFT_eSPI.h>
 #include <Button2.h>
 #include <TFT_eWidget.h>
 #include <driver/rtc_io.h>
 #include <Wire.h>
-
+#include <EnvironmentCalculations.h>
 #include "SensorQMI8658.hpp"
+#include <Preferences.h>
+#include <BME280I2C.h>
+#include "kalman.h"
+#include "logger.h"
+#include "images/bear_altimeters128x128.h"
+#include "images/battery_01.h"
+#include "images/battery_02.h"
+#include "images/battery_03.h"
+#include "images/battery_04.h"
+#include "images/battery_05.h"
+
 
 #ifndef SENSOR_SDA
 #define SENSOR_SDA  42
@@ -14,22 +42,8 @@
 #define SENSOR_SCL  41
 #endif
 
-#include <EnvironmentCalculations.h>
+logger flightLogger;
 
-//#include <Adafruit_MAX1704X.h>
-//Adafruit_MAX17048 maxlipo;
-#include "Adafruit_LC709203F.h"
-Adafruit_LC709203F lc;
-
-#include "images/bear_altimeters128x128.h"
-#include "images/battery_01.h"
-#include "images/battery_02.h"
-#include "images/battery_03.h"
-#include "images/battery_04.h"
-#include "images/battery_05.h"
-
-//#include <BMP280.h>
-#define P0 1013.25
 //////////////////////////////////////////////////////////////////////
 // Global variables
 //////////////////////////////////////////////////////////////////////
@@ -38,11 +52,12 @@ Adafruit_LC709203F lc;
 #define STATUS_HEIGHT_BAR ICON_HEIGHT
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 #define ICON_POS_X (tft.width() - ICON_WIDTH)
-//#define BTN_DWN 0
+
 #define MIN_USB_VOL 4.7
 #define ADC_PIN 34
 #define CONV_FACTOR 1.8
 #define READS 20
+
 // Built in button GPIO - adjust for your board
 #define BUTTON_GPIO GPIO_NUM_0
 
@@ -58,10 +73,9 @@ TraceWidget trAccelX = TraceWidget(&gr);    // Accel X
 TraceWidget trAccelY = TraceWidget(&gr);    // Accel Y
 TraceWidget trAccelZ = TraceWidget(&gr);    // Accel Z
 
-#include <Preferences.h>
 Preferences preferences;
-#include <BME280I2C.h>
-//BMP280 bmp;
+
+
 // Assumed environmental values:
 float referencePressure = 1018.6;  // hPa local QFF (official meteor-station reading)
 float outdoorTemp = 4.7;           // °C  measured local outdoor temp.
@@ -108,6 +122,8 @@ SensorQMI8658 qmi;
 IMUdata acc;
 IMUdata gyr;
 
+Kalman KalmanAltitude;
+
 /*
    drawingText(String text)
 
@@ -134,7 +150,7 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
 */
 void button_init()
 {
-  btn.setLongClickHandler([](Button2 & b) {
+  /*btn.setLongClickHandler([](Button2 & b) {
     // Select
     unsigned int time = b.wasPressedFor();
     if (time >= 3000) {
@@ -143,94 +159,120 @@ void button_init()
       //SerialCom.end();//carefull it might crash
       enter_sleep();
     }
-  });
+    });*/
 
   btn.setClickHandler([](Button2 & b) {
     // Up
-    /*  Serial.println("Changing curve type");// It's called downCmd because it decreases the index of an array. Visually that would mean the selector goes upwards.
+    /*Serial.println("Changing curve type");// It's called downCmd because it decreases the index of an array. Visually that would mean the selector goes upwards.
       if (inGraph) {
-        long lastFlightNbr = logger.getLastFlightNbr();
-        //Make sure we have no reach the last flight
-        if (lastFlightNbr >= diplayedFlightNbr) {
-          if (currentCurveType < 3) {
-            currentCurveType++;
-            drawFlightNbr(diplayedFlightNbr, currentCurveType);
-          } else {
-            currentCurveType = 0;
-            drawFlightNbr(diplayedFlightNbr, currentCurveType);
-          }
+      long lastFlightNbr = flightLogger.getLastFlightNbr();
+      //Make sure we have not reach the last flight
+      if (lastFlightNbr >= diplayedFlightNbr) {
+        if (currentCurveType < 3) {
+          currentCurveType++;
+          drawFlightNbr(diplayedFlightNbr, currentCurveType);
+        } else {
+          currentCurveType = 0;
+          drawFlightNbr(diplayedFlightNbr, currentCurveType);
         }
+      }
       }*/
+    // Down
+    Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
+    if (inGraph) {
+      long lastFlightNbr = flightLogger.getLastFlightNbr();
+      //Make sure we have not reach the last flight
+      if (lastFlightNbr > diplayedFlightNbr) {
+
+        diplayedFlightNbr ++;
+        Serial.print("Flight:");
+        Serial.println(diplayedFlightNbr);
+        drawFlightNbr(diplayedFlightNbr, currentCurveType);
+      } else {
+        // if not lets go back to the first one if it exists
+        if (!(lastFlightNbr < 0)) {
+          diplayedFlightNbr = 0;
+          drawFlightNbr(diplayedFlightNbr, currentCurveType);
+        }
+      }
+    }
   });
 
-  /* btnDwn.setLongClickHandler([](Button2 & b) {
-     // Exit
-     Serial.println("Button Down slow");
-     unsigned int time = b.wasPressedFor();
-     if (time >= 1000 & time < 10000) {
-       if (!inGraph) {
-         long lastFlightNbr = logger.getLastFlightNbr();
-         Serial.print("lastFlightNbr:");
-         Serial.println(lastFlightNbr);
-         if (!(lastFlightNbr < 0)) {
-           inGraph = true;
-           diplayedFlightNbr = 0;
-           drawFlightNbr(diplayedFlightNbr, currentCurveType);
-         }
-       } else {
-         inGraph = false;
-         tft.init();
+  btn.setLongClickHandler([](Button2 & b) {
 
-         tft.fillScreen(TFT_BLACK);
+    Serial.println("Button Down slow");
+    unsigned int time = b.wasPressedFor();
+    // Exit
+    if (time >= 3000 & time < 10000 & !inGraph) {
+      //Serial.println("Turning off");
+      //inGraph = false;
+      //SerialCom.end();//carefull it might crash
+      enter_sleep();
+    }
 
-         // Graph area is 200 pixels wide, 150 high, dark grey background
-         gr.createGraph(200, 100, tft.color565(5, 5, 5));
-         // x scale units is from 0 to 100, y scale units is 0 to 50
-         gr.setGraphScale(0.0, 100.0, 0, 50.0);
-         //Serial.println(gr.getTextPadding());
-       }
-     }
-     if (time >= 10000) {
-       inGraph = false;
-       tft.init();
+    if (time >= 1000 & time < 3000) {
+      if (!inGraph) {
+        long lastFlightNbr = flightLogger.getLastFlightNbr();
+        Serial.print("lastFlightNbr:");
+        Serial.println(lastFlightNbr);
+        if (!(lastFlightNbr < 0)) {
+          inGraph = true;
+          diplayedFlightNbr = 0;
+          drawFlightNbr(diplayedFlightNbr, currentCurveType);
+        }
+      } else {
+        inGraph = false;
+        tft.init();
+        tft.fillScreen(TFT_BLACK);
 
-       tft.fillScreen(TFT_BLACK);
+        // Graph area is 200 pixels wide, 150 high, dark grey background
+        gr.createGraph(200, 100, tft.color565(5, 5, 5));
+        // x scale units is from 0 to 100, y scale units is 0 to 50
+        gr.setGraphScale(0.0, 100.0, 0, 50.0);
+        //Serial.println(gr.getTextPadding());
+      }
+    }
+    if (time >= 10000) {
+      inGraph = false;
+      tft.init();
 
-       // Graph area is 200 pixels wide, 150 high, dark grey background
-       gr.createGraph(200, 100, tft.color565(5, 5, 5));
-       // x scale units is from 0 to 100, y scale units is 0 to 50
-       gr.setGraphScale(0.0, 100.0, 0, 50.0);
-       Serial.println("Erasing flights!!!");
+      tft.fillScreen(TFT_BLACK);
 
-       // erasing flights
-       logger.clearFlightList();
-       logger.writeFlightList();
-       currentFileNbr = 0;
-       currentMemaddress = 201;
-     }
+      // Graph area is 200 pixels wide, 150 high, dark grey background
+      gr.createGraph(200, 100, tft.color565(5, 5, 5));
+      // x scale units is from 0 to 100, y scale units is 0 to 50
+      gr.setGraphScale(0.0, 100.0, 0, 50.0);
+      Serial.println("Erasing flights!!!");
 
-    });
+      // erasing flights
+      flightLogger.clearFlightList();
+      //logger.writeFlightList();
+      //currentFileNbr = 0;
+      //currentMemaddress = 201;
+    }
 
-    btnDwn.setClickHandler([](Button2 & b) {
-     // Down
-     Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
-     if (inGraph) {
-       long lastFlightNbr = logger.getLastFlightNbr();
-       //Make sure we have no reach the last flight
-       if (lastFlightNbr > diplayedFlightNbr) {
+  });
 
-         diplayedFlightNbr ++;
-         Serial.print("Flight:");
-         Serial.println(diplayedFlightNbr);
-         drawFlightNbr(diplayedFlightNbr, currentCurveType);
-       } else {
-         // if not lets go back to the first one if it exists
-         if (!(lastFlightNbr < 0)) {
-           diplayedFlightNbr = 0;
-           drawFlightNbr(diplayedFlightNbr, currentCurveType);
-         }
-       }
-     }
+  /* btnDwn.setClickHandler([](Button2 & b) {
+    // Down
+    Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
+    if (inGraph) {
+      long lastFlightNbr = logger.getLastFlightNbr();
+      //Make sure we have no reach the last flight
+      if (lastFlightNbr > diplayedFlightNbr) {
+
+        diplayedFlightNbr ++;
+        Serial.print("Flight:");
+        Serial.println(diplayedFlightNbr);
+        drawFlightNbr(diplayedFlightNbr, currentCurveType);
+      } else {
+        // if not lets go back to the first one if it exists
+        if (!(lastFlightNbr < 0)) {
+          diplayedFlightNbr = 0;
+          drawFlightNbr(diplayedFlightNbr, currentCurveType);
+        }
+      }
+    }
     });*/
 }
 
@@ -254,7 +296,7 @@ void setup() {
   tft.setSwapBytes(true);
 
   tft.pushImage(6, 0, 128, 128, bear_altimeters128x128);
-  tft.drawString("Bear Altimeter", 6, 135);
+  tft.drawString("Ultimate Altimeter", 6, 135);
   tft.drawString("ver 1.0", 6, 145);
   tft.drawString("Copyright", 6, 155);
   tft.drawString("Boris du Reau", 6, 165);
@@ -263,13 +305,23 @@ void setup() {
 
   while (!bme.begin())
   {
-    //tft.drawString("BMe280 error", 6, 195);
+    tft.drawString("BMe280 error", 6, 195);
+    delay(500);
   }
-  //if(!maxlipo.begin()) {
-  if (!lc.begin()) {
+
+  /*while (!lc.begin()) {
     tft.drawString("Lipo error", 6, 195);
-  }
+    delay(500);
+    }*/
+
   delay(2000);
+  Serial.println("Before altitude");
+  // let's do some dummy altitude reading
+  // to initialise the Kalman filter
+  for (int i = 0; i < 50; i++) {
+    ReadAltitude();
+  }
+
   //let's read the launch site altitude
   float sum = 0;
   for (int i = 0; i < 10; i++) {
@@ -278,10 +330,11 @@ void setup() {
   }
   initialAltitude = (long)(sum / 10.0);
   button_init();
-
+  Serial.println("Before QMI");
   // Initialize QMI8658C sensor with provided configuration
-  if (!qmi.begin(Wire, QMI8658_L_SLAVE_ADDRESS, SENSOR_SDA, SENSOR_SCL)) {
+  while (!qmi.begin(Wire, QMI8658_L_SLAVE_ADDRESS, SENSOR_SDA, SENSOR_SCL)) {
     tft.drawString("qmi error", 6, 195);
+    delay(500);
   }
   delay(1000); // Delay for sensor initialization
 
@@ -305,7 +358,7 @@ void setup() {
        ACC_RANGE_4G
        ACC_RANGE_8G
        ACC_RANGE_16G
-     * */
+    */
     SensorQMI8658::ACC_RANGE_4G,
     /*
        ACC_ODR_1000H
@@ -318,7 +371,7 @@ void setup() {
        ACC_ODR_LOWPOWER_21Hz
        ACC_ODR_LOWPOWER_11Hz
        ACC_ODR_LOWPOWER_3H
-    * */
+    */
     SensorQMI8658::ACC_ODR_1000Hz,
     /*
        LPF_MODE_0     //2.66% of ODR
@@ -326,7 +379,7 @@ void setup() {
        LPF_MODE_2     //5.39% of ODR
        LPF_MODE_3     //13.37% of ODR
        LPF_OFF        // OFF Low-Pass Fitter
-    * */
+    */
     SensorQMI8658::LPF_MODE_0);
 
   qmi.configGyroscope(
@@ -338,7 +391,7 @@ void setup() {
       GYR_RANGE_256DPS
       GYR_RANGE_512DPS
       GYR_RANGE_1024DPS
-    * */
+    */
     SensorQMI8658::GYR_RANGE_64DPS,
     /*
        GYR_ODR_7174_4Hz
@@ -350,7 +403,7 @@ void setup() {
        GYR_ODR_112_1Hz
        GYR_ODR_56_05Hz
        GYR_ODR_28_025H
-     * */
+    */
     SensorQMI8658::GYR_ODR_896_8Hz,
     /*
        LPF_MODE_0     //2.66% of ODR
@@ -358,10 +411,8 @@ void setup() {
        LPF_MODE_2     //5.39% of ODR
        LPF_MODE_3     //13.37% of ODR
        LPF_OFF        // OFF Low-Pass Fitter
-    * */
+    */
     SensorQMI8658::LPF_MODE_3);
-
-
 
 
   /*
@@ -369,9 +420,10 @@ void setup() {
     the output frequency will be based on the gyroscope output frequency.
     The example configuration is 896.8HZ output frequency,
     so the acceleration output frequency is also limited to 896.8HZ
-  * */
+  */
   qmi.enableGyroscope();
   qmi.enableAccelerometer();
+
 }
 
 /*
@@ -380,6 +432,34 @@ void setup() {
 
 */
 void loop() {
+  //Serial.println("in loop2");
+  button_loop();
+  currAltitude = (long)ReadAltitude() - initialAltitude;
+  if (!inGraph) {
+    //SendTelemetry(0, 500);
+    tft.setCursor (0, STATUS_HEIGHT_BAR);
+    char Altitude [40];
+
+    sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
+    tft.setCursor (0, STATUS_HEIGHT_BAR);
+    tft.println("                                     ");
+    tft.println(Altitude);
+    char temp [15];
+    if (qmi.getDataReady()) {
+      if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
+        sprintf(temp, "x=%3.2f m/s", (float)acc.x );
+        tft.println("");
+        tft.println(temp);
+        sprintf(temp, "y=%3.2f m/s", (float) acc.y );
+        tft.println(temp);
+        sprintf(temp, "z=%3.2f m/s", (float) acc.z );
+        tft.println(temp);
+      }
+    }
+  }
+}
+void loop2() {
+  Serial.println("in loop");
 
   char readVal = ' ';
   int i = 0;
@@ -388,47 +468,46 @@ void loop() {
 
   while ( readVal != ';')
   {
-
     button_loop();
 
     currAltitude = (long)ReadAltitude() - initialAltitude;
-    
+
     if (!( currAltitude > liftoffAltitude) )
     {
 
       if (!inGraph) {
         //SendTelemetry(0, 500);
         tft.setCursor (0, STATUS_HEIGHT_BAR);
-        
-        //if (maxlipo.cellVoltage() >= MIN_USB_VOL) {
-        if (lc.cellVoltage() >= MIN_USB_VOL) {
-          drawingText("Chrg");
-          tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_01);
-          delay(500);
-          tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_02);
-          delay(500);
-          tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_03);
-          delay(500);
-          tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_04);
-          delay(500);
-          tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_05);
-          delay(500);
-        } else {
 
-          //int batteryLevel = maxlipo.cellPercent();
-          int batteryLevel = lc.cellPercent();
-          if (batteryLevel >= 80) {
-            tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_04);
-          } else if (batteryLevel < 80 && batteryLevel >= 50 ) {
-            tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_03);
-          } else if (batteryLevel < 50 && batteryLevel >= 20 ) {
-            tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_02);
-          } else if (batteryLevel < 20 ) {
-            tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_01);
-          }
-          drawingText(String(batteryLevel) + "%");
-        }
-        char Altitude [35];
+
+        /* if (lc.cellVoltage() >= MIN_USB_VOL) {
+           drawingText("Chrg");
+           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_01);
+           delay(500);
+           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_02);
+           delay(500);
+           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_03);
+           delay(500);
+           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_04);
+           delay(500);
+           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_05);
+           delay(500);
+          } else {
+
+           //int batteryLevel = maxlipo.cellPercent();
+           int batteryLevel = lc.cellPercent();
+           if (batteryLevel >= 80) {
+             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_04);
+           } else if (batteryLevel < 80 && batteryLevel >= 50 ) {
+             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_03);
+           } else if (batteryLevel < 50 && batteryLevel >= 20 ) {
+             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_02);
+           } else if (batteryLevel < 20 ) {
+             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_01);
+           }
+           drawingText(String(batteryLevel) + "%");
+          }*/
+        char Altitude [40];
 
         sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
         tft.setCursor (0, STATUS_HEIGHT_BAR);
@@ -436,8 +515,8 @@ void loop() {
         tft.println(Altitude);
 
 
-        char temp [15];
-        if (qmi.getDataReady()) {
+        /*char temp [15];
+          if (qmi.getDataReady()) {
           if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
             sprintf(temp, "x=%3.2f m/s", (float)acc.x );
             tft.println("");
@@ -447,12 +526,12 @@ void loop() {
             sprintf(temp, "z=%3.2f m/s", (float) acc.z );
             tft.println(temp);
           }
-        }
+          }*/
       }
 
 
-      while (Serial.available())
-      {
+      /*while (Serial.available())
+        {
         readVal = Serial.read();
         if (readVal != ';' )
         {
@@ -464,7 +543,7 @@ void loop() {
           commandbuffer[i++] = '\0';
           break;
         }
-      }
+        }*/
     }
     else {
       //Serial.println("Recording!!!!");
@@ -482,7 +561,7 @@ void loop() {
 
 
 */
-double ReadAltitude()
+float ReadAltitude()
 {
   float temp(NAN), hum(NAN), pres(NAN);
 
@@ -493,6 +572,8 @@ double ReadAltitude()
   EnvironmentCalculations::AltitudeUnit envAltUnit  =  EnvironmentCalculations::AltitudeUnit_Meters;
   EnvironmentCalculations::TempUnit     envTempUnit =  EnvironmentCalculations::TempUnit_Celsius;
   float altitude = EnvironmentCalculations::Altitude(pres, envAltUnit, referencePressure, outdoorTemp, envTempUnit);
+
+  //return KalmanAltitude.KalmanCalc(altitude);
   return altitude;
 }
 
@@ -563,79 +644,69 @@ void drawAxesXY(float minX, float maxX, float minY, float maxY, int flightNbr, c
 */
 void drawFlightNbr(int flightNbr, int curveType) {
 
-
-  /*logger.getFlightMinAndMax(flightNbr);
-
+  if (flightLogger.readFlight(flightNbr)) {
+    FlightDataStruct* currentFlight;
+    currentFlight = flightLogger.getFlightData();
+    flightLogger.getFlightMinAndMax(flightNbr);
 
     //altitude
     if ( curveType == 0) {
-    // Start altitude trace
-    trAltitude.startTrace(TFT_GREEN);
-    drawAxesXY(0.0, logger.getFlightDuration(), 0, (float) logger.getMaxAltitude(), flightNbr, "Altitude (meters)" );
+      // Start altitude trace
+      trAltitude.startTrace(TFT_GREEN);
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxAltitude(), flightNbr, "Altitude (meters)" );
     }
 
     //pressure
     if (curveType == 1) {
-    trPressure.startTrace(TFT_GREY);
-    drawAxesXY(0.0, logger.getFlightDuration(), 0, (float) logger.getMaxPressure(), flightNbr, "Pressure (mBar)" );
+      trPressure.startTrace(TFT_GREY);
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxPressure(), flightNbr, "Pressure (mBar)" );
     }
 
     if (curveType == 2) {
-    trAccelX.startTrace(TFT_RED);
-    trAccelY.startTrace(TFT_PURPLE);
-    trAccelY.startTrace(TFT_YELLOW);
-    float maxAccel = 0.0f;
-    if (logger.getMaxAccelX() > maxAccel)
-      maxAccel = (float)logger.getMaxAccelX();
-    if (logger.getMaxAccelY() > maxAccel)
-      maxAccel = (float)logger.getMaxAccelY();
-    if (logger.getMaxAccelZ() > maxAccel)
-      maxAccel = (float)logger.getMaxAccelZ();
+      trAccelX.startTrace(TFT_RED);
+      trAccelY.startTrace(TFT_PURPLE);
+      trAccelY.startTrace(TFT_YELLOW);
+      float maxAccel = 0.0f;
+      if (flightLogger.getMaxAccelX() > maxAccel)
+        maxAccel = (float)flightLogger.getMaxAccelX();
+      if (flightLogger.getMaxAccelY() > maxAccel)
+        maxAccel = (float)flightLogger.getMaxAccelY();
+      if (flightLogger.getMaxAccelZ() > maxAccel)
+        maxAccel = (float)flightLogger.getMaxAccelZ();
 
-    drawAxesXY(0.0, logger.getFlightDuration(), 0, (float) maxAccel / 1000.0, flightNbr, "Accel X,Y,Z (m/s)" );
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) maxAccel / 1000.0, flightNbr, "Accel X,Y,Z (m/s)" );
     }
     //temperature
     if (curveType == 3) {
-    trTemperature.startTrace(TFT_BROWN);
-    drawAxesXY(0.0, logger.getFlightDuration(), 0, (float) logger.getMaxTemperature(), flightNbr, "Temp (°C)" );
+      trTemperature.startTrace(TFT_BROWN);
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxTemperature(), flightNbr, "Temp (°C)" );
     }
-    unsigned long startaddress;
-    unsigned long endaddress;
 
-    startaddress = logger.getFlightStart(flightNbr);
-    endaddress = logger.getFlightStop(flightNbr);
-
-    if (startaddress > 200)
-    {
-    unsigned long i = startaddress;
+    //FlightDataStruct* currentFlight;
+    //currentFlight = flightLogger.getFlightData();
     unsigned long currentTime = 0;
 
-    while (i < (endaddress + 1))
+    for (long i = 0; i < flightLogger.getFlightSize(); i++)
     {
-      i = logger.readFlight(i) + 1;
-
-      currentTime = currentTime + logger.getFlightTimeData();
+      currentTime = currentTime + currentFlight[i].diffTime; //logger.getFlightTimeData();
 
       //altitude
       if ( curveType == 0) {
-        long altitude = logger.getFlightAltitudeData();
-        trAltitude.addPoint(currentTime, altitude);
+        trAltitude.addPoint(currentTime, currentFlight[i].altitude);
       }
       if ( curveType == 1) {
-        long pressure = logger.getFlightPressureData();
-        trPressure.addPoint(currentTime, pressure);
+        trPressure.addPoint(currentTime, currentFlight[i].pressure);
       }
       if ( curveType == 2) {
-        trAccelX.addPoint( currentTime, (float)logger.getADXL345accelX() / 1000.0);
-        trAccelY.addPoint( currentTime, (float)logger.getADXL345accelY() / 1000.0);
-        trAccelZ.addPoint( currentTime, (float)logger.getADXL345accelZ() / 1000.0);
+        trAccelX.addPoint(currentTime, (float)currentFlight[i].accelX / 1000.0);
+        trAccelY.addPoint(currentTime, (float)currentFlight[i].accelY / 1000.0);
+        trAccelZ.addPoint(currentTime, (float)currentFlight[i].accelZ / 1000.0);
       }
       if ( curveType == 3) {
-        long temperature = logger.getFlightTemperatureData();
-        trTemperature.addPoint(currentTime, temperature);
+        trTemperature.addPoint(currentTime, currentFlight[i].temperature);
       }
     }
-    }*/
+  }
 }
 
 /*
@@ -665,9 +736,8 @@ void recordAltitude()
 
       if (canRecord)
       {
-        //Save start address
-        //logger.setFlightStartAddress (currentFileNbr, currentMemaddress);
-        //Serial.println("setFlightStartAddress");
+        //init flight
+        flightLogger.initFlight();
       }
     }
     unsigned long prevTime = 0;
@@ -727,45 +797,32 @@ void recordAltitude()
       if (canRecord)
       {
         //logger.setFlightTimeData( diffTime);
+        flightLogger.setFlightTimeData(diffTime);
         //logger.setFlightAltitudeData(currAltitude);
-
+        flightLogger.setFlightAltitudeData(currAltitude);
         double temperature, pressure;
         //bmp.getTemperatureAndPressure(temperature, pressure);
-        //logger.setFlightTemperatureData((long) temperature);
-        //logger.setFlightPressureData((long) pressure);
+        flightLogger.setFlightTemperatureData((long) temperature);
+        flightLogger.setFlightPressureData((long) pressure);
 
-        /*sensors_event_t event345;
-          accel345.getEvent(&event345);
-          logger.setADXL345accelX((long) 1000 * event345.acceleration.x);
-          logger.setADXL345accelY((long) 1000 * event345.acceleration.y);
-          logger.setADXL345accelZ((long) 1000 * event345.acceleration.z);*/
-
-
-        /*if ( (currentMemaddress + logger.getSizeOfFlightData())  > endAddress) {
-          //flight is full let's save it
-          //save end address
-          ///logger.setFlightEndAddress (currentFileNbr, currentMemaddress - 1);
-          canRecord = false;
-          } else {
-          ///currentMemaddress = logger.writeFastFlight(currentMemaddress);
-          ///currentMemaddress++;
-          }*/
+        if (qmi.getDataReady()) {
+          if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
+            flightLogger.setAccelX(acc.x);
+            flightLogger.setAccelY(acc.y);
+            flightLogger.setAccelZ(acc.z);
+          }
+        }
+        flightLogger.addToCurrentFlight();
       }
 
 
       if ((canRecord  && (currAltitude < 10) && (millis() - timeToApogee) > 2000) || (canRecord  && (millis() - initialTime) > recordingTimeOut) )
       {
         //end loging
-        //store start and end address
-        //Serial.println("setFlightEndAddress");
-        //save end address
-        //logger.setFlightEndAddress (currentFileNbr, currentMemaddress - 1);
+        //save flight
         liftOff = false;
-
-        ///logger.writeFlightList();
+        flightLogger.writeFastFlight();
         exitRecording = true;
-        /* if (currentFileNbr < 25)
-           currentFileNbr ++;*/
       }
     } // end while (liftoff)
   } //end while(recording)
