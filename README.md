@@ -61,6 +61,6 @@ The code is free for you to download and you do not need to buy anything from me
 
 # Disclaimer
 
-I am not responsible for any damage that could hapen. The code is provided as it is
+I am not responsible for any damage that could happen. The code is provided as it is
 
 
