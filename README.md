@@ -19,12 +19,19 @@ The board looks like this
 # Building the code
 
 You will need to download the Arduino ide from the [Arduino web site](https://www.arduino.cc/). 
-Make sure that you install ESP32 support
+Make sure that you install ESP32 support. 
+
+2 versions are provided one that uses the preference library to store the flight.
+https://github.com/bdureau/UltimateAltimeter/tree/main/UltimateAltimeter
+
+and another one that uses the LittleFS library
+https://github.com/bdureau/UltimateAltimeter/tree/main/UltimateAltimeterLittleFS
+
 The project depend on the following libraries
   - TFT
   - Button2
   - TFT_eWidget
-  - Preferences
+  - Preferences or LittleFS
   - BME280
   - SensorLib (used for the QMI8658 sensor)
     
