@@ -52,6 +52,11 @@ and uncomment the following line
 ```
 #include <User_Setups/Setup400_Adafruit_Feather.h>
 ```
+
+You will need to have the ESP32 board support version 2.0.14, anything higher than that may not work !!!
+
+<img src="/photos/Esp32 board.png" width="55%">
+
 # Contributing
 
 If you want to contribute to the project just fork my project or send me some code. 
