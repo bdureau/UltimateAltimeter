@@ -6,14 +6,17 @@ logger::logger() {
 }
 
 bool logger::initFileSystem() {
-  //return LittleFS.begin();
   if (!LittleFS.begin(false)) {
+#ifdef DEBUG
     Serial.println("LITTLEFS Mount failed");
     Serial.println("Did not find filesystem; starting format");
+#endif
     // format if begin fails
     if (!LittleFS.begin(true)) {
+#ifdef DEBUG
       Serial.println("LITTLEFS mount failed");
       Serial.println("Formatting not possible");
+#endif
       return false;
     } else {
       Serial.println("Formatting");
@@ -23,38 +26,47 @@ bool logger::initFileSystem() {
 }
 
 bool logger::clearFlightList() {
+#ifdef DEBUG
   Serial.println(F("Clearing all flights..."));
-  
+#endif
   // Open the root directory
   File root = LittleFS.open("/");
   if (!root || !root.isDirectory()) {
+#ifdef DEBUG
     Serial.println(F("Failed to open the root directory"));
+#endif
     return false;
   }
 
   // Iterate over all files in the root directory
   File file = root.openNextFile();
   while (file) {
+#ifdef DEBUG
     Serial.print(F("Deleting file: "));
     Serial.println(file.name());
-
+#endif
     // Delete the current file
     char fileName [15];
-    sprintf(fileName, "/%s",file.name() );
+    sprintf(fileName, "/%s", file.name() );
     //make sure that you close the file so that it can be deleted
     file.close();
     //if (LittleFS.remove(file.name())) {
     if (LittleFS.remove(fileName)) {
+#ifdef DEBUG
       Serial.println(F("Flight deleted successfully"));
+#endif
     } else {
+#ifdef DEBUG
       Serial.println(F("Failed to delete flight"));
+#endif
     }
 
     // Move to the next file
     file = root.openNextFile();
   }
-
+#ifdef DEBUG
   Serial.println(F("All files cleared."));
+#endif
   return true;
 }
 
@@ -64,7 +76,9 @@ long logger::getLastFlightNbr() {
   // Open the root directory
   File root = LittleFS.open("/");
   if (!root || !root.isDirectory()) {
+#ifdef DEBUG
     Serial.println(F("Failed to open the root directory"));
+#endif
     return maxFlightNumber;
   }
 
@@ -72,8 +86,10 @@ long logger::getLastFlightNbr() {
   File file = root.openNextFile();
   while (file) {
     String fileName = file.name();
+    #ifdef DEBUG
     Serial.print("Found file: ");
     Serial.println(fileName);
+    #endif
 
     // Check if the filename matches the pattern "flight<number>.json"
     if (fileName.startsWith("flight") && fileName.endsWith(".json")) {
@@ -101,7 +117,7 @@ bool logger::writeFastFlight() {
 bool logger::writeFlight(long flightNbr) {
   char flightName [15];
   sprintf(flightName, "/flight%i.json", flightNbr);
-  
+
   DynamicJsonDocument doc(4096);
   JsonObject flight = doc.createNestedObject(flightName);
 
@@ -128,7 +144,9 @@ bool logger::writeFlight(long flightNbr) {
 bool logger::readFlight(long flightNbr) {
   char flightName [15];
   sprintf(flightName, "/flight%i.json", flightNbr);
+  #ifdef DEBUG
   Serial.println(flightName);
+  #endif
   File file = LittleFS.open(flightName, "r");
   if (!file) return false;
 
@@ -202,15 +220,15 @@ void logger::setFlightHumidityData( long humidity) {
   currentRecord.humidity = humidity;
 }
 
-void logger::setAccelX(long accelX) {
+void logger::setAccelX(float accelX) {
   currentRecord.accelX = accelX;
 }
 
-void logger::setAccelY(long accelY) {
+void logger::setAccelY(float accelY) {
   currentRecord.accelY = accelY;
 }
 
-void logger::setAccelZ(long accelZ) {
+void logger::setAccelZ(float accelZ) {
   currentRecord.accelZ = accelZ;
 }
 
@@ -255,19 +273,19 @@ void logger::getFlightMinAndMax(long flightNbr)
       if (flightData[i].pressure > _FlightMinAndMax.maxTemperature)
         _FlightMinAndMax.maxPressure = flightData[i].pressure;
 
-      //long accelX = getADXL345accelX();
+
       if (flightData[i].accelX < _FlightMinAndMax.minAccelX)
         _FlightMinAndMax.minAccelX = flightData[i].accelX;
       if (flightData[i].accelX > _FlightMinAndMax.maxAccelX)
         _FlightMinAndMax.maxAccelX = flightData[i].accelX;
 
-      //long accelY = getADXL345accelY();
+
       if (flightData[i].accelY < _FlightMinAndMax.minAccelY)
         _FlightMinAndMax.minAccelX = flightData[i].accelY;
       if (flightData[i].accelY > _FlightMinAndMax.maxAccelY)
         _FlightMinAndMax.maxAccelX = flightData[i].accelY;
 
-      //long accelZ = getADXL345accelZ();
+
       if (flightData[i].accelZ < _FlightMinAndMax.minAccelZ)
         _FlightMinAndMax.minAccelZ = flightData[i].accelZ;
       if (flightData[i].accelZ > _FlightMinAndMax.maxAccelZ)
@@ -300,32 +318,91 @@ long logger::getMaxPressure()
 {
   return _FlightMinAndMax.maxPressure;
 }
+long logger::getMaxHumidity()
+{
+  return _FlightMinAndMax.maxHumidity;
+}
+long logger::getMinHumidity()
+{
+  return _FlightMinAndMax.minHumidity;
+}
 
-long logger::getMaxAccelX()
+float logger::getMaxAccelX()
 {
   return _FlightMinAndMax.maxAccelX;
 }
 
-long logger::getMinAccelX()
+float logger::getMinAccelX()
 {
   return _FlightMinAndMax.minAccelX;
 }
 
-long logger::getMinAccelY()
+float logger::getMinAccelY()
 {
   return _FlightMinAndMax.minAccelY;
 }
-long logger::getMaxAccelY()
+float logger::getMaxAccelY()
 {
   return _FlightMinAndMax.maxAccelY;
 }
 
-long logger::getMinAccelZ()
+float logger::getMinAccelZ()
 {
   return _FlightMinAndMax.minAccelZ;
 }
 
-long logger::getMaxAccelZ()
+float logger::getMaxAccelZ()
 {
   return _FlightMinAndMax.maxAccelZ;
+}
+
+void logger::printFlightData(int flightNbr)
+{
+
+  unsigned long currentTime = 0;
+
+  if (readFlight(flightNbr)) {
+    for (long i = 0; i < dataPos ; i++)
+    {
+      char flightDt[120] = "";
+      char temp[20] = "";
+      currentTime = currentTime + flightData[i].diffTime;
+      strcat(flightDt, "data,");
+      sprintf(temp, "%i,", flightNbr );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", currentTime );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].altitude );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].temperature );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].pressure );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", 0 ); //dummy voltage
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].accelX * 1000 );
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].accelY * 1000);
+      strcat(flightDt, temp);
+      sprintf(temp, "%i,", flightData[i].accelZ * 1000 );
+      strcat(flightDt, temp);
+
+      unsigned int chk = msgChk(flightDt, sizeof(flightDt));
+      sprintf(temp, "%i", chk);
+      strcat(flightDt, temp);
+      strcat(flightDt, ";\n");
+
+      Serial.print("$");
+      Serial.print(flightDt);
+    }
+  }
+}
+unsigned int logger::msgChk( char * buffer, long length ) {
+
+  long index;
+  unsigned int checksum;
+
+  for ( index = 0L, checksum = 0; index < length; checksum += (unsigned int) buffer[index++] );
+  return (unsigned int) ( checksum % 256 );
+
 }

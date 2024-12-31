@@ -12,9 +12,9 @@ struct FlightDataStruct {
   long temperature;
   long humidity;
   long pressure;
-  long accelX;
-  long accelY;
-  long accelZ;
+  float accelX;
+  float accelY;
+  float accelZ;
 };
 
 struct FlightMinAndMaxStruct {
@@ -24,12 +24,14 @@ struct FlightMinAndMaxStruct {
   long maxTemperature;
   long minPressure;
   long maxPressure;
-  long minAccelX;
-  long maxAccelX;
-  long minAccelY;
-  long maxAccelY;
-  long minAccelZ;
-  long maxAccelZ;
+  long minHumidity;
+  long maxHumidity;
+  float minAccelX;
+  float maxAccelX;
+  float minAccelY;
+  float maxAccelY;
+  float minAccelZ;
+  float maxAccelZ;
   long flightDuration;
 };
 
@@ -50,27 +52,31 @@ class logger {
     void setFlightPressureData( long pressure);
     void setFlightHumidityData( long humidity);
     void setFlightTemperatureData(long temperature);
-    void setAccelX(long accelX);
-    void setAccelY(long accelY);
-    void setAccelZ(long accelZ);
+    void setAccelX(float accelX);
+    void setAccelY(float accelY);
+    void setAccelZ(float accelZ);
     void getFlightMinAndMax(long flightNbr);
     long getMaxTemperature();
     long getMaxPressure();
     long getMinAltitude();
     long getMaxAltitude();
-    long getMinAccelX();
-    long getMaxAccelX();
-    long getMinAccelY();
-    long getMaxAccelY();
-    long getMinAccelZ();
-    long getMaxAccelZ();
+    long getMinHumidity();
+    long getMaxHumidity();
+    float getMinAccelX();
+    float getMaxAccelX();
+    float getMinAccelY();
+    float getMaxAccelY();
+    float getMinAccelZ();
+    float getMaxAccelZ();
     long getFlightDuration();
     long getFlightSize();
+    void printFlightData(int flightNbr);
 
   private:
     FlightDataStruct* flightData;
     FlightDataStruct currentRecord;
     long dataPos;
+    unsigned int msgChk( char * buffer, long length );
     FlightMinAndMaxStruct _FlightMinAndMax;
 };
 

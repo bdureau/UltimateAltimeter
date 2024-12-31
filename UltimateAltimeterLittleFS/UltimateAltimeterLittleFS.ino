@@ -1,5 +1,5 @@
 /*
-    UltimateAltimeter ver0.1
+    UltimateAltimeter ver0.2
     Copyright Boris du Reau 2012-2024
     This is using a BME280 presure sensor
     for the accelerometer
@@ -12,6 +12,9 @@
     Major changes on version 0.1
     Initial version of the code, this is re-using code from the TTGO board
     can display altitude, acceleration, temperature and pressure
+    Major changes on version 0.2
+    Code cleanup
+    Added communication with the BearConsole application
 
 */
 #include <SPI.h>
@@ -26,15 +29,13 @@
 #include "kalman.h"
 #include "logger.h"
 #include "images/bear_altimeters128x128.h"
-#include "images/battery_01.h"
-#include "images/battery_02.h"
-#include "images/battery_03.h"
-#include "images/battery_04.h"
-#include "images/battery_05.h"
+#define MAJOR_VERSION 0
+#define MINOR_VERSION 2
+#define BOARD_FIRMWARE "UltimateAltimeter"
 
 //#define DEBUG
 struct bmeValues {
-  float pressure; 
+  float pressure;
   float temperature;
   float humidity;
   float altitude;
@@ -53,16 +54,10 @@ logger flightLogger;
 //////////////////////////////////////////////////////////////////////
 // Global variables
 //////////////////////////////////////////////////////////////////////
-#define ICON_WIDTH 70
-#define ICON_HEIGHT 36
-#define STATUS_HEIGHT_BAR ICON_HEIGHT
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
-#define ICON_POS_X (tft.width() - ICON_WIDTH)
 
-#define MIN_USB_VOL 4.7
-#define ADC_PIN 34
-#define CONV_FACTOR 1.8
-#define READS 20
+//#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
+
+#define STATUS_HEIGHT_BAR 10
 
 // Built in button GPIO - adjust for your board
 #define BUTTON_GPIO GPIO_NUM_0
@@ -128,15 +123,7 @@ IMUdata gyr;
 
 Kalman KalmanAltitude;
 
-/*
-   drawingText(String text)
 
-*/
-void drawingText(String text) {
-  tft.fillRect(0, 0, ICON_POS_X, ICON_HEIGHT, TFT_BLACK);
-  tft.setTextDatum(5);
-  tft.drawString(text, ICON_POS_X - 2, STATUS_HEIGHT_BAR / 2, 4);
-}
 
 /*
    tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
@@ -156,21 +143,6 @@ void button_init()
 {
 
   btn.setClickHandler([](Button2 & b) {
-    // Up
-    /*Serial.println("Changing curve type");// It's called downCmd because it decreases the index of an array. Visually that would mean the selector goes upwards.
-      if (inGraph) {
-      long lastFlightNbr = flightLogger.getLastFlightNbr();
-      //Make sure we have not reach the last flight
-      if (lastFlightNbr >= diplayedFlightNbr) {
-        if (currentCurveType < 3) {
-          currentCurveType++;
-          drawFlightNbr(diplayedFlightNbr, currentCurveType);
-        } else {
-          currentCurveType = 0;
-          drawFlightNbr(diplayedFlightNbr, currentCurveType);
-        }
-      }
-      }*/
     // Down
     Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
     if (inGraph) {
@@ -183,17 +155,19 @@ void button_init()
       } else {
         // if not lets go back to the first one if it exists
         if (!((lastFlightNbr < 1))) {
-          if(currentCurveType > 4) {
-          diplayedFlightNbr = 1;
-          currentCurveType = 0;
+          if (currentCurveType > 4) {
+            diplayedFlightNbr = 1;
+            currentCurveType = 0;
           }
         }
       }
+#ifdef DEBUG
       Serial.print("Flight:");
       Serial.println(diplayedFlightNbr);
       Serial.print("type:");
       Serial.println(currentCurveType);
-      
+#endif
+
       drawFlightNbr(diplayedFlightNbr, currentCurveType);
     }
   });
@@ -205,16 +179,16 @@ void button_init()
     // Exit
     if (time >= 3000 & time < 10000 & !inGraph) {
       //Serial.println("Turning off");
-      //inGraph = false;
-      //SerialCom.end();//carefull it might crash
       enter_sleep();
     }
 
     if (time >= 1000 & time < 3000) {
       if (!inGraph) {
         long lastFlightNbr = flightLogger.getLastFlightNbr();
+#ifdef DEBUG
         Serial.print("lastFlightNbr:");
         Serial.println(lastFlightNbr);
+#endif
         if (!(lastFlightNbr < 1)) {
           inGraph = true;
           diplayedFlightNbr = 1;
@@ -229,7 +203,6 @@ void button_init()
         gr.createGraph(200, 100, tft.color565(5, 5, 5));
         // x scale units is from 0 to 100, y scale units is 0 to 50
         gr.setGraphScale(0.0, 100.0, 0, 50.0);
-        //Serial.println(gr.getTextPadding());
       }
     }
     if (time >= 10000) {
@@ -246,34 +219,9 @@ void button_init()
 
       // erasing flights
       flightLogger.clearFlightList();
-      //logger.writeFlightList();
-      //currentFileNbr = 0;
-      //currentMemaddress = 201;
     }
 
   });
-
-  /* btnDwn.setClickHandler([](Button2 & b) {
-    // Down
-    Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
-    if (inGraph) {
-      long lastFlightNbr = logger.getLastFlightNbr();
-      //Make sure we have no reach the last flight
-      if (lastFlightNbr > diplayedFlightNbr) {
-
-        diplayedFlightNbr ++;
-        Serial.print("Flight:");
-        Serial.println(diplayedFlightNbr);
-        drawFlightNbr(diplayedFlightNbr, currentCurveType);
-      } else {
-        // if not lets go back to the first one if it exists
-        if (!(lastFlightNbr < 0)) {
-          diplayedFlightNbr = 0;
-          drawFlightNbr(diplayedFlightNbr, currentCurveType);
-        }
-      }
-    }
-    });*/
 }
 
 /*
@@ -289,10 +237,9 @@ void button_loop()
 
 void setup() {
   Wire.begin();
-  Serial.begin(115200);
+  Serial.begin(38400);
 
   if (!flightLogger.initFileSystem()) {
-    //delay(5000);
     Serial.println(F("Failed to initialize file system"));
   } else {
     Serial.println(F("initFileSystem Ok"));
@@ -433,41 +380,8 @@ void setup() {
 
 
 */
-/*void loop2() {
 
-  button_loop();
-  currAltitude = (long)ReadAltitude() - initialAltitude;
-  if (!( currAltitude > liftoffAltitude) )
-  {
-    if (!inGraph) {
-      tft.setCursor (0, STATUS_HEIGHT_BAR);
-      char Altitude [40];
-
-      sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
-      tft.setCursor (0, STATUS_HEIGHT_BAR);
-      tft.println("                                     ");
-      tft.println(Altitude);
-      char temp [15];
-      if (qmi.getDataReady()) {
-        if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
-          sprintf(temp, "x=%3.2f m/s", (float)acc.x );
-          tft.println("");
-          tft.println(temp);
-          sprintf(temp, "y=%3.2f m/s", (float) acc.y );
-          tft.println(temp);
-          sprintf(temp, "z=%3.2f m/s", (float) acc.z );
-          tft.println(temp);
-        }
-      }
-    }
-  } else {
-    Serial.println("Recording!!!!");
-    recordAltitude();
-  }
-  }*/
 void loop() {
-
-
 
   char readVal = ' ';
   int i = 0;
@@ -484,37 +398,7 @@ void loop() {
     {
 
       if (!inGraph) {
-        //SendTelemetry(0, 500);
         tft.setCursor (0, STATUS_HEIGHT_BAR);
-
-
-        /* if (lc.cellVoltage() >= MIN_USB_VOL) {
-           drawingText("Chrg");
-           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_01);
-           delay(500);
-           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_02);
-           delay(500);
-           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_03);
-           delay(500);
-           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_04);
-           delay(500);
-           tft_output(ICON_POS_X, 0, ICON_WIDTH, 36, (uint16_t*) battery_05);
-           delay(500);
-          } else {
-
-           //int batteryLevel = maxlipo.cellPercent();
-           int batteryLevel = lc.cellPercent();
-           if (batteryLevel >= 80) {
-             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_04);
-           } else if (batteryLevel < 80 && batteryLevel >= 50 ) {
-             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_03);
-           } else if (batteryLevel < 50 && batteryLevel >= 20 ) {
-             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_02);
-           } else if (batteryLevel < 20 ) {
-             tft_output(ICON_POS_X, 0, 70, 36, (uint16_t*) battery_01);
-           }
-           drawingText(String(batteryLevel) + "%");
-          }*/
         char Altitude [40];
 
         sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
@@ -558,7 +442,7 @@ void loop() {
       recordAltitude();
     }
   }
-  //interpretCommandBuffer(commandbuffer);
+  interpretCommandBuffer(commandbuffer);
 }
 
 
@@ -591,7 +475,7 @@ bmeValues ReadAltitude()
 /*
 
    enter_sleep()
-
+    This will turn off the altimeter
 */
 void enter_sleep()
 {
@@ -646,18 +530,30 @@ void drawAxesXY(float minX, float maxX, float minY, float maxY, int flightNbr, c
 
   // Draw the y axis scale
   tft.setTextDatum(MR_DATUM); // Middle right text datum
-  tft.drawNumber(maxY, gr.getPointX(0.0), gr.getPointY(maxY));
+  if (maxY < 1000)
+    tft.drawNumber(maxY, gr.getPointX(0.0), gr.getPointY(maxY));
+  else
+    tft.drawNumber(round2dec(maxY / 1000), gr.getPointX(0.0), gr.getPointY(maxY));
 }
 
 long  roundUp(float val) {
-  long ret = (long)val; 
-  if (val > ret) {   
-    return ret + 1;     
+  long ret = (long)val;
+  if (val > ret) {
+    return ret + 1;
   }
-  return ret;          
+  return ret;
+}
+float round2dec(float var)
+{
+  // 37.66666 * 100 =3766.66
+  // 3766.66 + .5 =3767.16    for rounding off value
+  // then type cast to int so value is 3767
+  // then divided by 100 so the value converted into 37.67
+  float value = (int)(var * 100 + .5);
+  return (float)value / 100;
 }
 /*
-   drawFlightNbr(int flightNbr)
+   drawFlightNbr(int flightNbr, int curveType)
 
 */
 void drawFlightNbr(int flightNbr, int curveType) {
@@ -671,7 +567,11 @@ void drawFlightNbr(int flightNbr, int curveType) {
     if ( curveType == 0) {
       // Start altitude trace
       trAltitude.startTrace(TFT_GREEN);
-      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxAltitude(), flightNbr, "Altitude (meters)" );
+      if ((float) flightLogger.getMaxAltitude() < 1000)
+        drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxAltitude(), flightNbr, "Altitude (meters)" );
+      else {
+        drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) flightLogger.getMaxAltitude(), flightNbr, "Altitude (km)" );
+      }
     }
     //accel
     if (curveType == 1) {
@@ -705,9 +605,9 @@ void drawFlightNbr(int flightNbr, int curveType) {
     if (curveType == 4) {
       trHumidity.startTrace(TFT_YELLOW);
       Serial.println(flightLogger.getMaxHumidity());
-      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) roundUp(flightLogger.getMaxHumidity()+1), flightNbr, "Hum %" );
+      drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) roundUp(flightLogger.getMaxHumidity() + 1), flightNbr, "Hum %" );
     }
-    
+
     unsigned long currentTime = 0;
 
     for (long i = 0; i < flightLogger.getFlightSize(); i++)
@@ -786,6 +686,7 @@ void recordAltitude()
       currAltitude = (long)ReadAltitude().altitude - initialAltitude;
       sprintf(Altitude, "Altitude = %i meters    ", currAltitude );
       tft.setCursor (0, STATUS_HEIGHT_BAR);
+
       tft.println("Recording in progress .....");
       tft.println(Altitude);
 
@@ -821,7 +722,7 @@ void recordAltitude()
       //record
       if (canRecord)
       {
-        if ((currentTime - prevTime) > 10) {
+        if ((currentTime - prevTime) > 150) {
           diffTime = currentTime - prevTime;
           prevTime = currentTime;
 
@@ -856,4 +757,354 @@ void recordAltitude()
       }
     } // end while (liftoff)
   } //end while(recording)
+}
+
+/*
+
+   This interprets menu commands. This can be used in the commend line or
+   this is used by the Android console
+
+   Commands are as folow:
+   a  get all flight data
+   b  get altimeter config
+   c  toggle continuity on and off
+   d  reset alti config
+   e  erase all saved flights
+   f  FastReading on
+   g  FastReading off
+   h  hello. Does not do much
+   i  unused
+   k  folowed by a number turn on or off the selected output
+   l  list all flights
+   m  followed by a number turn main loop on/off. if number is 1 then
+      main loop in on else turn it off
+   n  Return the number of recorded flights in the EEprom
+   o  requesting test trame
+   r  followed by a number which is the flight number.
+      This will retrieve all data for the specified flight
+   s  write altimeter config
+   t  reset alti config (why?)
+   w  Start or stop recording
+   x  delete last curve
+   y  followed by a number turn telemetry on/off. if number is 1 then
+      telemetry in on else turn it off
+   z  send gps raw data
+
+*/
+void interpretCommandBuffer(char *commandbuffer) {
+  //get all flight data
+  if (commandbuffer[0] == 'a')
+  {
+    Serial.print(F("$start;\n"));
+    int i;
+    ///todo
+    for (i = 0; i < flightLogger.getLastFlightNbr() + 1; i++)
+    {
+      flightLogger.printFlightData(i);
+    }
+    Serial.print(F("$end;\n"));
+  }
+  //get altimeter config
+  else if (commandbuffer[0] == 'b')
+  {
+    printAltiConfig((char *)"UltimateAltimeter");
+  }
+  //toggle continuity on and off
+  else if (commandbuffer[0] == 'c')
+  {
+    //not implemeted
+  }
+  //reset alti config this is equal to t why do I have 2 !!!!
+  else if (commandbuffer[0] == 'd')
+  {
+    /*preferences.begin("namespace", false);
+      preferences.putString("Name", "TTGOAltimeter");
+      preferences.end();*/
+  }
+  //this will erase all flight
+  else if (commandbuffer[0] == 'e')
+  {
+    Serial.println(F("Erase\n"));
+    flightLogger.clearFlightList();
+  }
+  //FastReading
+  else if (commandbuffer[0] == 'f')
+  {
+    //not implemeted
+  }
+  //FastReading off
+  else if (commandbuffer[0] == 'g')
+  {
+    //not implemeted
+  }
+  //hello
+  else if (commandbuffer[0] == 'h')
+  {
+    Serial.print(F("$OK;\n"));
+  }
+  // unused
+  else if (commandbuffer[0] == 'i')
+  {
+    //not implemeted
+  }
+  //turn on or off the selected output
+  else if (commandbuffer[0] == 'k')
+  {
+    //not implemeted
+  }
+  //list all flights
+  else if (commandbuffer[0] == 'l')
+  {
+    //logger.printFlightList();
+  }
+
+  //mainloop on/off
+  else if (commandbuffer[0] == 'm')
+  {
+    if (commandbuffer[1] == '1') {
+      //mainLoopEnable = true;
+    }
+    else {
+      //mainLoopEnable = false;
+    }
+
+    Serial.print(F("$OK;\n"));
+
+  }
+  //Number of flight
+  else if (commandbuffer[0] == 'n')
+  {
+    char flightData[30] = "";
+    char temp[9] = "";
+
+    Serial.print(F("$start;\n"));
+
+    strcat(flightData, "nbrOfFlight,");
+    sprintf(temp, "%i,", (int)flightLogger.getLastFlightNbr() + 1 );
+    strcat(flightData, temp);
+    unsigned int chk = msgChk(flightData, sizeof(flightData));
+    sprintf(temp, "%i", chk);
+    strcat(flightData, temp);
+    strcat(flightData, ";\n");
+
+    Serial.print("$");
+    Serial.print(flightData);
+    Serial.print(F("$end;\n"));
+
+  }
+  // send test tram
+  else if (commandbuffer[0] == 'o')
+  {
+
+  }
+  //altimeter config param
+  //write  config
+  else if (commandbuffer[0] == 'p')
+  {
+
+  }
+  else if (commandbuffer[0] == 'q')
+  {
+    Serial.print(F("$OK;\n"));
+  }
+  //this will read one flight
+  else if (commandbuffer[0] == 'r')
+  {
+    char temp[3];
+
+    temp[0] = commandbuffer[1];
+    if (commandbuffer[2] != '\0')
+    {
+      temp[1] = commandbuffer[2];
+      temp[2] = '\0';
+    }
+    else
+      temp[1] = '\0';
+
+    if (atol(temp) > -1)
+    {
+      Serial.print(F("$start;\n"));
+
+      flightLogger.printFlightData(atoi(temp));
+
+      Serial.print(F("$end;\n"));
+    }
+    else
+      Serial.println(F("not a valid flight"));
+  }
+  //write altimeter config
+  else if (commandbuffer[0] == 's')
+  {
+
+  }
+  //reset config and set it to default
+  else if (commandbuffer[0] == 't')
+  {
+    //reset config
+    /*preferences.begin("namespace", false);
+      preferences.putString("Name", "TTGOAltimeter");
+      preferences.end();*/
+  }
+  else if (commandbuffer[0] == 'v')
+  {
+    /* preferences.begin("namespace", false);
+      Serial.println(preferences.getString("Name", "TTGOAltimeter"));
+      preferences.end();*/
+  }
+  // Recording
+  else if (commandbuffer[0] == 'w')
+  {
+    recordAltitude();
+  }
+  //delete last curve
+  else if (commandbuffer[0] == 'x')
+  {
+    /*logger.eraseLastFlight();
+      logger.readFlightList();
+      long lastFlightNbr = logger.getLastFlightNbr();
+      if (lastFlightNbr < 0)
+      {
+      currentFileNbr = 0;
+      currentMemaddress = 201;
+      }
+      else
+      {
+      currentMemaddress = logger.getFlightStop(lastFlightNbr) + 1;
+      currentFileNbr = lastFlightNbr + 1;
+      }
+      canRecord = logger.CanRecord();*/
+  }
+
+  //telemetry on/off
+  else if (commandbuffer[0] == 'y')
+  {
+
+  }
+
+  //alti Name for ESP32
+  else if (commandbuffer[0] == 'z')
+  {
+    //updateAltiName(commandbuffer);
+    Serial.print(F("$OK;\n"));
+  }
+  // empty command
+  else if (commandbuffer[0] == ' ')
+  {
+    Serial.print(F("$K0;\n"));
+  }
+  else
+  {
+    Serial.print(F("$UNKNOWN;"));
+    Serial.println(commandbuffer[0]);
+  }
+}
+
+unsigned int msgChk( char * buffer, long length ) {
+
+  long index;
+  unsigned int checksum;
+
+  for ( index = 0L, checksum = 0; index < length; checksum += (unsigned int) buffer[index++] );
+  return (unsigned int) ( checksum % 256 );
+}
+
+/*
+
+   Print altimeter config to the Serial line
+
+*/
+void printAltiConfig(char *altiName)
+{
+  char altiConfig[160] = "";
+  char temp[25] = "";
+
+  strcat(altiConfig, "alticonfig,");
+
+  //Unit
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //beepingMode
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output1
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output2
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output3
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //supersonicYesNo
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //mainAltitude
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //AltimeterName
+  strcat(altiConfig, BOARD_FIRMWARE);
+  strcat(altiConfig, ",");
+  //alti major version
+  sprintf(temp, "%i,", MAJOR_VERSION);
+  strcat(altiConfig, temp);
+  //alti minor version
+  sprintf(temp, "%i,", MINOR_VERSION);
+  strcat(altiConfig, temp);
+  //output1 delay
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output2 delay
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output3 delay
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //Beeping frequency
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%lu,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output4
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //output4 delay
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //Lift off altitude
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //Battery type
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  // recording timeout
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //altiID
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  //useTelemetryPort
+  sprintf(temp, "%i,", 0);
+  strcat(altiConfig, temp);
+  sprintf(temp, "%s,", altiName);
+  strcat(altiConfig, temp);
+  unsigned int chk = 0;
+  chk = msgChk( altiConfig, sizeof(altiConfig) );
+  sprintf(temp, "%i;\n", chk);
+  strcat(altiConfig, temp);
+  Serial.print("$");
+  Serial.print(altiConfig);
 }
