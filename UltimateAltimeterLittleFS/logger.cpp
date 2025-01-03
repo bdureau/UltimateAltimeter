@@ -368,7 +368,7 @@ void logger::printFlightData(int flightNbr)
       char temp[20] = "";
       currentTime = currentTime + flightData[i].diffTime;
       strcat(flightDt, "data,");
-      sprintf(temp, "%i,", flightNbr );
+      sprintf(temp, "%i,", flightNbr-1 );
       strcat(flightDt, temp);
       sprintf(temp, "%i,", currentTime );
       strcat(flightDt, temp);
@@ -378,7 +378,7 @@ void logger::printFlightData(int flightNbr)
       strcat(flightDt, temp);
       sprintf(temp, "%i,", flightData[i].pressure );
       strcat(flightDt, temp);
-      sprintf(temp, "%i,", 0 ); //dummy voltage
+      sprintf(temp, "%i,", flightData[i].humidity ); //humidity
       strcat(flightDt, temp);
       sprintf(temp, "%i,", flightData[i].accelX * 1000 );
       strcat(flightDt, temp);

@@ -1,6 +1,6 @@
 /*
     UltimateAltimeter ver0.2
-    Copyright Boris du Reau 2012-2024
+    Copyright Boris du Reau 2012-2025
     This is using a BME280 presure sensor
     for the accelerometer
 
@@ -807,7 +807,9 @@ void interpretCommandBuffer(char *commandbuffer) {
   //get altimeter config
   else if (commandbuffer[0] == 'b')
   {
+    Serial.print(F("$start;\n"));
     printAltiConfig((char *)"UltimateAltimeter");
+    Serial.print(F("$end;\n"));
   }
   //toggle continuity on and off
   else if (commandbuffer[0] == 'c')
