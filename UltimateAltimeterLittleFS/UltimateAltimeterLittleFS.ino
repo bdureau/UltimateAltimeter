@@ -1,5 +1,5 @@
 /*
-    UltimateAltimeter ver0.2
+    UltimateAltimeter ver0.3
     Copyright Boris du Reau 2012-2025
     This is using a BME280 presure sensor
     for the accelerometer
@@ -15,6 +15,8 @@
     Major changes on version 0.2
     Code cleanup
     Added communication with the BearConsole application
+    Major changes on version 0.3
+    use the reset button to power on or of the board
 
 */
 #include <SPI.h>
@@ -30,8 +32,9 @@
 #include "logger.h"
 #include "images/bear_altimeters128x128.h"
 #define MAJOR_VERSION 0
-#define MINOR_VERSION 2
+#define MINOR_VERSION 3
 #define BOARD_FIRMWARE "UltimateAltimeter"
+#include <Preferences.h>
 
 //#define DEBUG
 struct bmeValues {
@@ -123,7 +126,7 @@ IMUdata gyr;
 
 Kalman KalmanAltitude;
 
-
+int onoroff = 2;
 
 /*
    tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
@@ -141,10 +144,9 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
 */
 void button_init()
 {
-
   btn.setClickHandler([](Button2 & b) {
     // Down
-    Serial.println("Button Down fast"); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
+    Serial.println(F("Button Down fast")); // It's called upCmd because it increases the index of an array. Visually that would mean the selector goes downwards.
     if (inGraph) {
       long lastFlightNbr = flightLogger.getLastFlightNbr();
       currentCurveType++;
@@ -176,12 +178,7 @@ void button_init()
 
     Serial.println("Button Down slow");
     unsigned int time = b.wasPressedFor();
-    // Exit
-    if (time >= 3000 & time < 10000 & !inGraph) {
-      //Serial.println("Turning off");
-      enter_sleep();
-    }
-
+    
     if (time >= 1000 & time < 3000) {
       if (!inGraph) {
         long lastFlightNbr = flightLogger.getLastFlightNbr();
@@ -220,7 +217,6 @@ void button_init()
       // erasing flights
       flightLogger.clearFlightList();
     }
-
   });
 }
 
@@ -238,7 +234,7 @@ void button_loop()
 void setup() {
   Wire.begin();
   Serial.begin(38400);
-
+  Serial.println(F("Starting"));
   if (!flightLogger.initFileSystem()) {
     Serial.println(F("Failed to initialize file system"));
   } else {
@@ -246,7 +242,42 @@ void setup() {
   }
 
   flightLogger.initFlight();
+  // turn on backlite
+  pinMode(TFT_BACKLITE, OUTPUT);
+  digitalWrite(TFT_BACKLITE, HIGH);
 
+  // turn on the TFT / I2C power supply
+  pinMode(TFT_I2C_POWER, OUTPUT);
+  digitalWrite(TFT_I2C_POWER, HIGH);
+  delay(10);
+  Preferences preferences;
+  preferences.begin("alti", false);
+  onoroff = preferences.getUInt("onoroff", 0);
+  if(onoroff == 0){
+    // system should turn on, but save onoroff = 1
+    // Take no action
+    preferences.putUInt("onoroff", 1);
+    preferences.end();
+  }
+  else{
+    // system should go to deep sleep, but save onoroff = 0
+    // Turn off all power options and enter deep sleep forever.
+    preferences.putUInt("onoroff", 0);
+    preferences.end();
+    pinMode(TFT_BACKLITE, OUTPUT);
+    pinMode(TFT_I2C_POWER, OUTPUT);
+    pinMode(4, OUTPUT);
+    digitalWrite(TFT_BACKLITE, LOW);
+    digitalWrite(TFT_I2C_POWER, LOW);
+    digitalWrite(4, LOW);
+    delay(100);
+    gpio_deep_sleep_hold_en();
+    gpio_hold_en((gpio_num_t) TFT_BACKLITE);
+    gpio_hold_en((gpio_num_t) TFT_I2C_POWER);
+    delay(2000);
+    esp_deep_sleep_start();
+  }
+  
   tft.init();
   tft.fillScreen(TFT_BLACK);
   tft.setSwapBytes(true);
@@ -380,7 +411,6 @@ void setup() {
 
 
 */
-
 void loop() {
 
   char readVal = ' ';
@@ -396,7 +426,6 @@ void loop() {
 
     if (!( currAltitude > liftoffAltitude) )
     {
-
       if (!inGraph) {
         tft.setCursor (0, STATUS_HEIGHT_BAR);
         char Altitude [40];
@@ -405,7 +434,6 @@ void loop() {
         tft.setCursor (0, STATUS_HEIGHT_BAR);
         tft.println("                                     ");
         tft.println(Altitude);
-
 
         char temp [15];
         if (qmi.getDataReady()) {
@@ -420,7 +448,6 @@ void loop() {
           }
         }
       }
-
 
       while (Serial.available())
       {
@@ -472,29 +499,11 @@ bmeValues ReadAltitude()
   return values;
 }
 
-/*
-
-   enter_sleep()
-    This will turn off the altimeter
-*/
-void enter_sleep()
-{
-  tft.fillScreen(TFT_BLACK);
-  tft.setRotation(0);
-  tft.drawString("turning off...", 6, 185);
-  digitalWrite(4, LOW);
-  delay(2000);
-  pinMode(BUTTON_GPIO, INPUT_PULLUP);
-  rtc_gpio_hold_en(BUTTON_GPIO);
-  esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, LOW);
-  esp_deep_sleep_start();
-}
 
 /*
    drawAxesXY(float minX, float maxX, float minY, float maxY )
 
 */
-
 void drawAxesXY(float minX, float maxX, float minY, float maxY, int flightNbr, char *curveName ) {
   tft.fillScreen(TFT_BLACK);
 
@@ -819,9 +828,7 @@ void interpretCommandBuffer(char *commandbuffer) {
   //reset alti config this is equal to t why do I have 2 !!!!
   else if (commandbuffer[0] == 'd')
   {
-    /*preferences.begin("namespace", false);
-      preferences.putString("Name", "TTGOAltimeter");
-      preferences.end();*/
+    
   }
   //this will erase all flight
   else if (commandbuffer[0] == 'e')
@@ -943,15 +950,11 @@ void interpretCommandBuffer(char *commandbuffer) {
   else if (commandbuffer[0] == 't')
   {
     //reset config
-    /*preferences.begin("namespace", false);
-      preferences.putString("Name", "TTGOAltimeter");
-      preferences.end();*/
+   
   }
   else if (commandbuffer[0] == 'v')
   {
-    /* preferences.begin("namespace", false);
-      Serial.println(preferences.getString("Name", "TTGOAltimeter"));
-      preferences.end();*/
+    
   }
   // Recording
   else if (commandbuffer[0] == 'w')
