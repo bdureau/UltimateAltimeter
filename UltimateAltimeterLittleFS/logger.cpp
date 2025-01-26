@@ -50,7 +50,6 @@ bool logger::clearFlightList() {
     sprintf(fileName, "/%s", file.name() );
     //make sure that you close the file so that it can be deleted
     file.close();
-    //if (LittleFS.remove(file.name())) {
     if (LittleFS.remove(fileName)) {
 #ifdef DEBUG
       Serial.println(F("Flight deleted successfully"));
@@ -70,6 +69,25 @@ bool logger::clearFlightList() {
   return true;
 }
 
+bool logger::deleteLastFlight() {
+  bool success = false;
+  // Delete the current file
+  char fileName [15];
+  sprintf(fileName, "/flight%i", (int) getLastFlightNbr()  );
+
+  if (LittleFS.remove(fileName)) {
+#ifdef DEBUG
+    Serial.println(F("Flight deleted successfully"));
+#endif
+    success = true;
+  } else {
+#ifdef DEBUG
+    Serial.println(F("Failed to delete flight"));
+#endif
+    success = false;
+  }
+  return success;
+}
 long logger::getLastFlightNbr() {
   long maxFlightNumber = 0; // Default to 0 if no valid flight file is found
 
@@ -86,10 +104,10 @@ long logger::getLastFlightNbr() {
   File file = root.openNextFile();
   while (file) {
     String fileName = file.name();
-    #ifdef DEBUG
+#ifdef DEBUG
     Serial.print("Found file: ");
     Serial.println(fileName);
-    #endif
+#endif
 
     // Check if the filename matches the pattern "flight<number>.json"
     if (fileName.startsWith("flight") && fileName.endsWith(".json")) {
@@ -129,7 +147,7 @@ bool logger::writeFlight(long flightNbr) {
     record["accelY"] = flightData[i].accelY;
     record["accelZ"] = flightData[i].accelZ;
     record["pressure"] = flightData[i].pressure;
-    record["humidity"] = flightData[i].humidity;
+    //record["humidity"] = flightData[i].humidity;
     record["temperature"] = flightData[i].temperature;
   }
 
@@ -144,9 +162,9 @@ bool logger::writeFlight(long flightNbr) {
 bool logger::readFlight(long flightNbr) {
   char flightName [15];
   sprintf(flightName, "/flight%i.json", flightNbr);
-  #ifdef DEBUG
+#ifdef DEBUG
   Serial.println(flightName);
-  #endif
+#endif
   File file = LittleFS.open(flightName, "r");
   if (!file) return false;
 
@@ -172,7 +190,7 @@ bool logger::readFlight(long flightNbr) {
     flightData[index].accelY = record["accelY"];
     flightData[index].accelZ = record["accelZ"];
     flightData[index].pressure = record["pressure"];
-    flightData[index].humidity = record["humidity"];
+    //flightData[index].humidity = record["humidity"];
     flightData[index].temperature = record["temperature"];
     index++;
   }
@@ -216,9 +234,9 @@ void logger::setFlightTemperatureData(long temperature) {
   currentRecord.temperature = temperature;
 }
 
-void logger::setFlightHumidityData( long humidity) {
+/*void logger::setFlightHumidityData( long humidity) {
   currentRecord.humidity = humidity;
-}
+}*/
 
 void logger::setAccelX(float accelX) {
   currentRecord.accelX = accelX;
@@ -318,14 +336,14 @@ long logger::getMaxPressure()
 {
   return _FlightMinAndMax.maxPressure;
 }
-long logger::getMaxHumidity()
+/*long logger::getMaxHumidity()
 {
   return _FlightMinAndMax.maxHumidity;
 }
 long logger::getMinHumidity()
 {
   return _FlightMinAndMax.minHumidity;
-}
+}*/
 
 float logger::getMaxAccelX()
 {
@@ -368,7 +386,7 @@ void logger::printFlightData(int flightNbr)
       char temp[20] = "";
       currentTime = currentTime + flightData[i].diffTime;
       strcat(flightDt, "data,");
-      sprintf(temp, "%i,", flightNbr-1 );
+      sprintf(temp, "%i,", flightNbr - 1 );
       strcat(flightDt, temp);
       sprintf(temp, "%i,", currentTime );
       strcat(flightDt, temp);
@@ -378,8 +396,8 @@ void logger::printFlightData(int flightNbr)
       strcat(flightDt, temp);
       sprintf(temp, "%i,", flightData[i].pressure );
       strcat(flightDt, temp);
-      sprintf(temp, "%i,", flightData[i].humidity ); //humidity
-      strcat(flightDt, temp);
+      //sprintf(temp, "%i,", flightData[i].humidity ); //humidity
+      ///strcat(flightDt, temp);
       sprintf(temp, "%i,", flightData[i].accelX * 1000 );
       strcat(flightDt, temp);
       sprintf(temp, "%i,", flightData[i].accelY * 1000);

@@ -17,6 +17,10 @@
     Added communication with the BearConsole application
     Major changes on version 0.3
     use the reset button to power on or of the board
+    Major changes on version 0.4
+    Added the status to the console app
+    Removed humidity
+    Fix to prevent stopping recording due to the ejection charge over pressure
 
 */
 #include <SPI.h>
@@ -32,7 +36,7 @@
 #include "logger.h"
 #include "images/bear_altimeters128x128.h"
 #define MAJOR_VERSION 0
-#define MINOR_VERSION 3
+#define MINOR_VERSION 4
 #define BOARD_FIRMWARE "UltimateAltimeter"
 #include <Preferences.h>
 
@@ -117,7 +121,9 @@ long apogeeAltitude;
 unsigned long measures = 5;
 boolean liftOff = false;
 unsigned long initialTime = 0;
-unsigned long timeToApogee = 0;
+//telemetry
+boolean telemetryEnable = false;
+long lastTelemetry = 0;
 
 SensorQMI8658 qmi;
 
@@ -178,7 +184,7 @@ void button_init()
 
     Serial.println("Button Down slow");
     unsigned int time = b.wasPressedFor();
-    
+
     if (time >= 1000 & time < 3000) {
       if (!inGraph) {
         long lastFlightNbr = flightLogger.getLastFlightNbr();
@@ -253,13 +259,13 @@ void setup() {
   Preferences preferences;
   preferences.begin("alti", false);
   onoroff = preferences.getUInt("onoroff", 0);
-  if(onoroff == 0){
+  if (onoroff == 0) {
     // system should turn on, but save onoroff = 1
     // Take no action
     preferences.putUInt("onoroff", 1);
     preferences.end();
   }
-  else{
+  else {
     // system should go to deep sleep, but save onoroff = 0
     // Turn off all power options and enter deep sleep forever.
     preferences.putUInt("onoroff", 0);
@@ -277,7 +283,7 @@ void setup() {
     delay(2000);
     esp_deep_sleep_start();
   }
-  
+
   tft.init();
   tft.fillScreen(TFT_BLACK);
   tft.setSwapBytes(true);
@@ -423,10 +429,12 @@ void loop() {
     button_loop();
 
     currAltitude = (long)ReadAltitude().altitude - initialAltitude;
-
+    if (liftOff)
+      SendTelemetry(millis() - initialTime, 200);
     if (!( currAltitude > liftoffAltitude) )
     {
       if (!inGraph) {
+        SendTelemetry(0, 500);
         tft.setCursor (0, STATUS_HEIGHT_BAR);
         char Altitude [40];
 
@@ -545,7 +553,7 @@ void drawAxesXY(float minX, float maxX, float minY, float maxY, int flightNbr, c
     tft.drawNumber(round2dec(maxY / 1000), gr.getPointX(0.0), gr.getPointY(maxY));
 }
 
-long  roundUp(float val) {
+long roundUp(float val) {
   long ret = (long)val;
   if (val > ret) {
     return ret + 1;
@@ -611,11 +619,11 @@ void drawFlightNbr(int flightNbr, int curveType) {
       drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) roundUp(flightLogger.getMaxTemperature()), flightNbr, "Temp (°C)" );
     }
     //humidity
-    if (curveType == 4) {
+    /*if (curveType == 4) {
       trHumidity.startTrace(TFT_YELLOW);
       Serial.println(flightLogger.getMaxHumidity());
       drawAxesXY(0.0, flightLogger.getFlightDuration(), 0, (float) roundUp(flightLogger.getMaxHumidity() + 1), flightNbr, "Hum %" );
-    }
+      }*/
 
     unsigned long currentTime = 0;
 
@@ -639,9 +647,9 @@ void drawFlightNbr(int flightNbr, int curveType) {
       if ( curveType == 3) {
         trTemperature.addPoint(currentTime, currentFlight[i].temperature);
       }
-      if ( curveType == 4) {
+      /*if ( curveType == 4) {
         trHumidity.addPoint(currentTime, currentFlight[i].humidity);
-      }
+        }*/
     }
   }
 }
@@ -653,6 +661,7 @@ void drawFlightNbr(int flightNbr, int curveType) {
 void recordAltitude()
 {
   long recordingTimeOut = 120 * 1000;
+  unsigned long timeToApogee = 0;
 
   exitRecording = false;
 
@@ -667,6 +676,7 @@ void recordAltitude()
     if ((currAltitude > liftoffAltitude) && !liftOff)
     {
       liftOff = true;
+      SendTelemetry(0, 200);
       // save the time
       initialTime = millis();
 
@@ -689,7 +699,7 @@ void recordAltitude()
       currentTime = millis() - initialTime;
 
       prevAltitude = currAltitude;
-
+      SendTelemetry(currentTime, 200);
       //display
       char Altitude [15];
       currAltitude = (long)ReadAltitude().altitude - initialAltitude;
@@ -755,7 +765,7 @@ void recordAltitude()
       }
 
 
-      if ((canRecord  && (currAltitude < 10) && (millis() - timeToApogee) > 2000) || (canRecord  && (millis() - initialTime) > recordingTimeOut) )
+      if ((canRecord && (timeToApogee > 0) && (currAltitude < 10) && (millis() - timeToApogee) > 2000) || (canRecord  && (millis() - initialTime) > recordingTimeOut) )
       {
         //end loging
         //save flight
@@ -828,7 +838,7 @@ void interpretCommandBuffer(char *commandbuffer) {
   //reset alti config this is equal to t why do I have 2 !!!!
   else if (commandbuffer[0] == 'd')
   {
-    
+
   }
   //this will erase all flight
   else if (commandbuffer[0] == 'e')
@@ -950,11 +960,11 @@ void interpretCommandBuffer(char *commandbuffer) {
   else if (commandbuffer[0] == 't')
   {
     //reset config
-   
+
   }
   else if (commandbuffer[0] == 'v')
   {
-    
+
   }
   // Recording
   else if (commandbuffer[0] == 'w')
@@ -964,6 +974,7 @@ void interpretCommandBuffer(char *commandbuffer) {
   //delete last curve
   else if (commandbuffer[0] == 'x')
   {
+    flightLogger.deleteLastFlight();
     /*logger.eraseLastFlight();
       logger.readFlightList();
       long lastFlightNbr = logger.getLastFlightNbr();
@@ -983,7 +994,15 @@ void interpretCommandBuffer(char *commandbuffer) {
   //telemetry on/off
   else if (commandbuffer[0] == 'y')
   {
-
+if (commandbuffer[1] == '1') {
+      Serial.print(F("Telemetry enabled\n"));
+      telemetryEnable = true;
+    }
+    else {
+      Serial.print(F("Telemetry disabled\n"));
+      telemetryEnable = false;
+    }
+    Serial.print(F("$OK;\n"));
   }
 
   //alti Name for ESP32
@@ -1112,4 +1131,112 @@ void printAltiConfig(char *altiName)
   strcat(altiConfig, temp);
   Serial.print("$");
   Serial.print(altiConfig);
+}
+
+/*
+   SendTelemetry(long sampleTime, int freq)
+   Send telemety so that we can plot the flight
+
+*/
+void SendTelemetry(long sampleTime, int freq) {
+  char altiTelem[150] = "";
+  char temp[10] = "";
+
+  if (telemetryEnable && (millis() - lastTelemetry) > freq) {
+    lastTelemetry = millis();
+    int val = 0;
+    //check liftoff
+    int li = 0;
+    if (liftOff)
+      li = 1;
+
+
+    int landed = 0;
+    if ( liftOff && currAltitude < 10)
+      landed = 1;
+
+    strcat(altiTelem, "telemetry," );
+    sprintf(temp, "%i,", currAltitude);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", li);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", -1);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", apogeeAltitude);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", -1);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", -1);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", landed);
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", sampleTime);
+    strcat(altiTelem, temp);
+    strcat(altiTelem, "-1,");
+    strcat(altiTelem, "-1,");
+    strcat(altiTelem, "-1,");
+    strcat(altiTelem, "-1,");
+
+    //dtostrf(BL.getBatteryVolts(), 4, 2, temp);
+    //strcat(altiTelem, temp);
+    strcat(altiTelem, "-1,");
+
+    // temperature
+    bmeValues val1 = ReadAltitude();
+    /*#ifdef BMP085_180
+      float temperature;
+      temperature = bmp.readTemperature();
+      sprintf(temp, "%i,", (int)temperature );
+      #endif
+      #ifdef BMP280_sensor
+      double temperature, pressure;
+      bmp.getTemperatureAndPressure(temperature, pressure);
+      sprintf(temp, "%i,", (int)temperature );
+      #endif*/
+    sprintf(temp, "%i,", (int) val1.temperature);
+    strcat(altiTelem, temp);
+    //sprintf(temp, "%i,", (int) val1.pressure);
+    //strcat(altiTelem, temp);
+
+    sprintf(temp, "%i,", -1 );
+    strcat(altiTelem, temp);
+    sprintf(temp, "%i,", flightLogger.getLastFlightNbr() + 1 );
+    strcat(altiTelem, temp);
+
+    //drogueFiredAltitude
+    sprintf(temp, "%i,", -1);
+    strcat(altiTelem, temp);
+
+    if (qmi.getDataReady()) {
+      if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
+        sprintf(temp, "%i,", (int)(1000 * acc.x));
+        strcat(altiTelem, temp);
+        sprintf(temp, "%i,", (int)(1000 * acc.y));
+        strcat(altiTelem, temp);
+        sprintf(temp, "%i,", (int)(1000 * acc.z));
+      } else {
+        sprintf(temp, "%i,", -1);
+        strcat(altiTelem, temp);
+        sprintf(temp, "%i,", -1);
+        strcat(altiTelem, temp);
+        sprintf(temp, "%i,", -1);
+      }
+    } else {
+      sprintf(temp, "%i,", -1);
+      strcat(altiTelem, temp);
+      sprintf(temp, "%i,", -1);
+      strcat(altiTelem, temp);
+      sprintf(temp, "%i,", -1);
+    }
+    strcat(altiTelem, temp);
+
+    unsigned int chk;
+    chk = msgChk(altiTelem, sizeof(altiTelem));
+    sprintf(temp, "%i", chk);
+    strcat(altiTelem, temp);
+    strcat(altiTelem, ";\n");
+
+    Serial.print("$");
+    Serial.print(altiTelem);
+  }
 }

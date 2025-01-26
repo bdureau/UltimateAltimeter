@@ -10,7 +10,7 @@ struct FlightDataStruct {
   long diffTime;
   long altitude;
   long temperature;
-  long humidity;
+  //long humidity;
   long pressure;
   float accelX;
   float accelY;
@@ -24,8 +24,8 @@ struct FlightMinAndMaxStruct {
   long maxTemperature;
   long minPressure;
   long maxPressure;
-  long minHumidity;
-  long maxHumidity;
+  /*long minHumidity;
+  long maxHumidity;*/
   float minAccelX;
   float maxAccelX;
   float minAccelY;
@@ -40,6 +40,7 @@ class logger {
     logger();
     bool initFileSystem();
     bool clearFlightList();
+    bool deleteLastFlight();
     long getLastFlightNbr();
     bool writeFlight(long flightNbr);
     bool writeFastFlight();
@@ -50,7 +51,7 @@ class logger {
     void setFlightTimeData(long diffTime);
     void setFlightAltitudeData(long altitude);
     void setFlightPressureData( long pressure);
-    void setFlightHumidityData( long humidity);
+    //void setFlightHumidityData( long humidity);
     void setFlightTemperatureData(long temperature);
     void setAccelX(float accelX);
     void setAccelY(float accelY);
@@ -60,8 +61,8 @@ class logger {
     long getMaxPressure();
     long getMinAltitude();
     long getMaxAltitude();
-    long getMinHumidity();
-    long getMaxHumidity();
+    /*long getMinHumidity();
+    long getMaxHumidity();*/
     float getMinAccelX();
     float getMaxAccelX();
     float getMinAccelY();
