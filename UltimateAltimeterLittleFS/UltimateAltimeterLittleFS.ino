@@ -1,5 +1,5 @@
 /*
-    UltimateAltimeter ver0.3
+    UltimateAltimeter ver0.4
     Copyright Boris du Reau 2012-2025
     This is using a BME280 presure sensor
     for the accelerometer
@@ -21,6 +21,8 @@
     Added the status to the console app
     Removed humidity
     Fix to prevent stopping recording due to the ejection charge over pressure
+    Major changes on version 0.5
+    changes son that it uses the normal BMP280 library
 
 */
 #include <SPI.h>
@@ -31,22 +33,24 @@
 #include <Wire.h>
 #include <EnvironmentCalculations.h>
 #include "SensorQMI8658.hpp"
-#include <BME280I2C.h>
+//#include <BME280I2C.h>
+#include <BMP280.h>
 #include "kalman.h"
 #include "logger.h"
 #include "images/bear_altimeters128x128.h"
 #define MAJOR_VERSION 0
-#define MINOR_VERSION 4
+#define MINOR_VERSION 5
 #define BOARD_FIRMWARE "UltimateAltimeter"
 #include <Preferences.h>
+#include <WiFi.h>
 
 //#define DEBUG
-struct bmeValues {
+struct bmpValues {
   float pressure;
   float temperature;
-  float humidity;
   float altitude;
 };
+BMP280 bmp280;
 
 #ifndef SENSOR_SDA
 #define SENSOR_SDA  42
@@ -61,8 +65,6 @@ logger flightLogger;
 //////////////////////////////////////////////////////////////////////
 // Global variables
 //////////////////////////////////////////////////////////////////////
-
-//#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
 #define STATUS_HEIGHT_BAR 10
 
@@ -83,23 +85,6 @@ TraceWidget trAccelZ = TraceWidget(&gr);    // Accel Z
 TraceWidget trHumidity = TraceWidget(&gr);
 
 // Assumed environmental values:
-float referencePressure = 1018.6;  // hPa local QFF (official meteor-station reading)
-float outdoorTemp = 4.7;           // °C  measured local outdoor temp.
-float barometerAltitude = 1650.3;  // meters ... map readings + barometer position
-
-BME280I2C::Settings settings(
-  BME280::OSR_X1,
-  BME280::OSR_X1,
-  BME280::OSR_X1,
-  BME280::Mode_Forced,
-  BME280::StandbyTime_1000ms,
-  BME280::Filter_Off,
-  BME280::SpiEnable_False,
-  BME280I2C::I2CAddr_0x77 // I2C address. I2C specific.
-);
-
-BME280I2C bme(settings);
-
 bool inGraph = false;
 
 //ground level altitude
@@ -247,6 +232,7 @@ void setup() {
     Serial.println(F("initFileSystem Ok"));
   }
 
+  WiFi.mode(WIFI_OFF);
   flightLogger.initFlight();
   // turn on backlite
   pinMode(TFT_BACKLITE, OUTPUT);
@@ -293,14 +279,10 @@ void setup() {
   tft.drawString("ver 1.0", 6, 145);
   tft.drawString("Copyright", 6, 155);
   tft.drawString("Boris du Reau", 6, 165);
-  tft.drawString("2012-2024", 6, 175);
+  tft.drawString("2012-2025", 6, 175);
   tft.drawString("Initializing....", 6, 185);
 
-  while (!bme.begin())
-  {
-    tft.drawString("BMe280 error", 6, 195);
-    delay(500);
-  }
+  bmp280.begin();
 
   // let's do some dummy altitude reading
   // to initialise the Kalman filter
@@ -488,22 +470,14 @@ void loop() {
 
 
 */
-bmeValues ReadAltitude()
-{
-  bmeValues values;
-  float temp(NAN), hum(NAN), pres(NAN);
-
-  BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
-  BME280::PresUnit presUnit(BME280::PresUnit_Pa);
-
-  bme.read(pres, temp, hum, tempUnit, presUnit);
-  EnvironmentCalculations::AltitudeUnit envAltUnit  =  EnvironmentCalculations::AltitudeUnit_Meters;
-  EnvironmentCalculations::TempUnit     envTempUnit =  EnvironmentCalculations::TempUnit_Celsius;
-  float altitude = EnvironmentCalculations::Altitude(pres, envAltUnit, referencePressure, outdoorTemp, envTempUnit);
-  values.pressure = pres;
-  values.temperature = temp;
-  values.humidity = hum;
-  values.altitude = KalmanAltitude.KalmanCalc(altitude);
+bmpValues ReadAltitude(){
+  bmpValues values;
+  //Get pressure value
+  uint32_t pressure = bmp280.getPressure();
+  float temperature = bmp280.getTemperature();
+  values.pressure = pressure;
+  values.temperature = temperature;
+  values.altitude = KalmanAltitude.KalmanCalc(bmp280.calAltitude(pressure, 1013.0));
   return values;
 }
 
@@ -749,7 +723,7 @@ void recordAltitude()
           flightLogger.setFlightAltitudeData(currAltitude);
           double temperature, pressure;
           //bmp.getTemperatureAndPressure(temperature, pressure);
-          bmeValues val = ReadAltitude();
+          bmpValues val = ReadAltitude();
           flightLogger.setFlightTemperatureData((long) val.temperature);
           flightLogger.setFlightPressureData((long) val.pressure);
 
@@ -1182,7 +1156,7 @@ void SendTelemetry(long sampleTime, int freq) {
     strcat(altiTelem, "-1,");
 
     // temperature
-    bmeValues val1 = ReadAltitude();
+    bmpValues val1 = ReadAltitude();
     /*#ifdef BMP085_180
       float temperature;
       temperature = bmp.readTemperature();
