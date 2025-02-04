@@ -4,3 +4,6 @@ altitude, pressure, temperature, humidity and acceration on the 3 axis
 
 Specific instruction to compile it
 Make sure SPIFFS otherwise it will not store the data
+
+As of version 0.5 I am switching to the BMP280 library from dvarrel (ver 1.0.3)
+https://github.com/dvarrel/BMP280
