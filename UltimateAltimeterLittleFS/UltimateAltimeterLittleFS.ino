@@ -1,5 +1,5 @@
 /*
-    UltimateAltimeter ver0.4
+    UltimateAltimeter ver0.5
     Copyright Boris du Reau 2012-2025
     This is using a BME280 presure sensor
     for the accelerometer
@@ -33,7 +33,7 @@
 #include <Wire.h>
 #include <EnvironmentCalculations.h>
 #include "SensorQMI8658.hpp"
-//#include <BME280I2C.h>
+
 #include <BMP280.h>
 #include "kalman.h"
 #include "logger.h"
@@ -44,6 +44,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+//#define USE_SLEEP_MODE
 //#define DEBUG
 struct bmpValues {
   float pressure;
@@ -242,6 +243,8 @@ void setup() {
   pinMode(TFT_I2C_POWER, OUTPUT);
   digitalWrite(TFT_I2C_POWER, HIGH);
   delay(10);
+
+#ifdef USE_SLEEP_MODE
   Preferences preferences;
   preferences.begin("alti", false);
   onoroff = preferences.getUInt("onoroff", 0);
@@ -256,19 +259,45 @@ void setup() {
     // Turn off all power options and enter deep sleep forever.
     preferences.putUInt("onoroff", 0);
     preferences.end();
+    // Disable accelerometer and gyro
+    qmi.disableGyroscope();
+    qmi.disableAccelerometer();
+
     pinMode(TFT_BACKLITE, OUTPUT);
     pinMode(TFT_I2C_POWER, OUTPUT);
     pinMode(4, OUTPUT);
     digitalWrite(TFT_BACKLITE, LOW);
     digitalWrite(TFT_I2C_POWER, LOW);
-    digitalWrite(4, LOW);
+    pinMode(NEOPIXEL_POWER, OUTPUT);
+    pinMode(41, OUTPUT);
+    pinMode(42, OUTPUT);
+    pinMode(26, OUTPUT);
+    pinMode(7, OUTPUT);
     delay(100);
+    digitalWrite(4, LOW);
+    // Set pin states
+    digitalWrite(TFT_BACKLITE, LOW);
+    digitalWrite(TFT_I2C_POWER, LOW);
+    digitalWrite(NEOPIXEL_POWER, LOW);
+    // SDA SDL pins to the Stemma QT need to be set high as they have physical pull up resistors (2x10K)
+    // PS Ram CS and TFT CS should be high.
+    digitalWrite(41, HIGH);
+    digitalWrite(42, HIGH);
+    digitalWrite(26, HIGH);
+    digitalWrite(7, HIGH);
+    delay(10);
     gpio_deep_sleep_hold_en();
     gpio_hold_en((gpio_num_t) TFT_BACKLITE);
     gpio_hold_en((gpio_num_t) TFT_I2C_POWER);
+    gpio_hold_en((gpio_num_t)NEOPIXEL_POWER);
+    gpio_hold_en((gpio_num_t)41);
+    gpio_hold_en((gpio_num_t)42);
+    gpio_hold_en((gpio_num_t)26);
+    gpio_hold_en((gpio_num_t)7);
     delay(2000);
     esp_deep_sleep_start();
   }
+#endif
 
   tft.init();
   tft.fillScreen(TFT_BLACK);
@@ -470,7 +499,7 @@ void loop() {
 
 
 */
-bmpValues ReadAltitude(){
+bmpValues ReadAltitude() {
   bmpValues values;
   //Get pressure value
   uint32_t pressure = bmp280.getPressure();
@@ -968,7 +997,7 @@ void interpretCommandBuffer(char *commandbuffer) {
   //telemetry on/off
   else if (commandbuffer[0] == 'y')
   {
-if (commandbuffer[1] == '1') {
+    if (commandbuffer[1] == '1') {
       Serial.print(F("Telemetry enabled\n"));
       telemetryEnable = true;
     }
